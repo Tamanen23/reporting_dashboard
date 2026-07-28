@@ -1,0 +1,64 @@
+{
+  "status": "proposed_blocked_pending_source_and_bonus_decisions",
+  "code": "deposits_withdrawals_bonus_dashboard",
+  "name": "Betnabiso Deposits, Withdrawals and Bonus Dashboard",
+  "description": "Payment flows, net cash flow, channels and confirmed bonus performance.",
+  "definition_version": "1.0.0-draft.1",
+  "calculation_version": "1.0.0-draft.1",
+  "template_version": "1.0.0-draft.1",
+  "reporting_period_type": "date_range",
+  "outputs": ["pdf", "png", "json", "prepared_dataset", "validation_log", "reconciliation_report", "manifest"],
+  "processor": "reports.deposits_withdrawals_bonus_dashboard.v1.report.DepositsWithdrawalsBonusDashboardReport",
+  "template": "reports/deposits_withdrawals_bonus_dashboard/v1/templates/dashboard.html",
+  "display_order": 20,
+  "timeout_seconds": 1200,
+  "retention_days": 365,
+  "allowed_roles": ["admin", "report_user"],
+  "inputs": [
+    {
+      "key": "payment_transactions",
+      "kind": "uploaded_workbook",
+      "label": "Deposits & Withdrawals workbook",
+      "required": true,
+      "accepted_extensions": ["xlsx"],
+      "accepted_mime_types": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+      "worksheet": {"selector": "pending_source_inspection"},
+      "canonical_required_fields": ["player_id", "username", "transaction_id", "transaction_date", "transaction_type", "transaction_status", "amount"],
+      "source_column_mapping": "pending_source_inspection"
+    },
+    {
+      "key": "bonus_transactions",
+      "kind": "uploaded_workbook",
+      "label": "Bonus Transactions workbook",
+      "required": null,
+      "requirement_decision": "pending_confirmation_of_source_and_dashboard_publication_policy",
+      "accepted_extensions": ["xlsx"],
+      "accepted_mime_types": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+      "canonical_required_fields": ["player_id", "bonus_transaction_id", "bonus_date", "bonus_status", "bonus_amount"],
+      "source_column_mapping": "pending_source"
+    }
+  ],
+  "prepared_datasets": [
+    {"key": "payment_dataset", "format": "parquet", "grain": "one_valid_record_per_transaction_id", "schema_version": "1.0.0-draft.1"},
+    {"key": "bonus_dataset", "format": "parquet", "grain": "pending_bonus_source", "schema_version": "1.0.0-draft.1", "conditional": true}
+  ],
+  "configuration": {
+    "timezone": "Indian/Mauritius",
+    "include_report_date": null,
+    "excluded_dates": [],
+    "test_account_rule": {"field": "username", "operator": "contains_case_insensitive", "value": "test"},
+    "successful_transaction_statuses": null,
+    "duplicate_transaction_rule": null,
+    "amount_basis": null,
+    "transaction_type_mapping": null,
+    "gateway_mapping": null,
+    "retail_manual_mapping": null,
+    "first_time_depositor_rule": null,
+    "bonus_conversion_rule": null
+  },
+  "rendering": {
+    "pdf": {"page_size": "A3", "orientation": "landscape", "print_background": true},
+    "png": {"width": 2560, "height": 1440, "device_scale_factor": 2},
+    "theme": "betnabiso_dark_gold_v1"
+  }
+}

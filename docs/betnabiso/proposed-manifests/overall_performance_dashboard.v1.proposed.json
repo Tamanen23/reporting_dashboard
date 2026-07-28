@@ -1,0 +1,39 @@
+{
+  "status": "proposed_blocked_pending_source_selection_decisions",
+  "code": "overall_performance_dashboard",
+  "name": "Betnabiso Overall Performance Dashboard",
+  "description": "Strictly reconciled consolidation of metrics owned by completed Betnabiso modules.",
+  "definition_version": "1.0.0-draft.1",
+  "calculation_version": "1.0.0-draft.1",
+  "template_version": "1.0.0-draft.1",
+  "reporting_period_type": "date_range",
+  "outputs": ["pdf", "png", "json", "reconciliation_report", "manifest"],
+  "processor": "reports.overall_performance_dashboard.v1.report.OverallPerformanceDashboardReport",
+  "template": "reports/overall_performance_dashboard/v1/templates/dashboard.html",
+  "display_order": 50,
+  "timeout_seconds": 900,
+  "retention_days": 365,
+  "allowed_roles": ["admin", "report_user"],
+  "inputs": [
+    {"key": "registration_results", "kind": "generation_result", "required": true, "source_report_code": "registration_dashboard", "source_artifact_key": "calculated_results", "period_compatibility": "exact"},
+    {"key": "payment_bonus_results", "kind": "generation_result", "required": true, "source_report_code": "deposits_withdrawals_bonus_dashboard", "source_artifact_key": "calculated_results", "period_compatibility": "exact"},
+    {"key": "cash_operations_results", "kind": "generation_result", "required": true, "source_report_code": "cash_operations_dashboard", "source_artifact_key": "calculated_results", "period_compatibility": "exact"},
+    {"key": "player_activity_results", "kind": "generation_result", "required": true, "source_report_code": "player_activity_retention_dashboard", "source_artifact_key": "calculated_results", "period_compatibility": "exact"}
+  ],
+  "raw_workbook_inputs_allowed": false,
+  "provenance_required_fields": ["source_report_code", "source_generation_uuid", "source_calculation_version", "source_result_path", "source_result_checksum", "source_field"],
+  "configuration": {
+    "timezone": "Indian/Mauritius",
+    "include_report_date": null,
+    "excluded_dates": [],
+    "source_generation_selection": null,
+    "reconciliation_policy": "strict_fail_before_publication",
+    "decimal_tolerances": null,
+    "bonus_unavailable_display": null
+  },
+  "rendering": {
+    "pdf": {"page_size": "A3", "orientation": "landscape", "print_background": true},
+    "png": {"width": 2560, "height": 1440, "device_scale_factor": 2},
+    "theme": "betnabiso_dark_gold_v1"
+  }
+}

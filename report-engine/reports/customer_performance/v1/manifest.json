@@ -1,0 +1,43 @@
+{
+  "code": "customer_performance",
+  "name": "Customer Performance Dashboard",
+  "description": "Synthetic demonstration module; replace its business rules with approved rules.",
+  "definition_version": "1.0.0",
+  "calculation_version": "1.0.0",
+  "template_version": "1.0.0",
+  "reporting_period_type": "date",
+  "outputs": ["pdf", "png"],
+  "processor": "reports.customer_performance.v1.report.CustomerPerformanceReport",
+  "template": "templates/dashboard.html",
+  "display_order": 10,
+  "timeout_seconds": 900,
+  "retention_days": 365,
+  "allowed_roles": ["admin", "report_user"],
+  "rendering": {
+    "pdf": {"page_size": "A4", "orientation": "landscape", "print_background": true},
+    "png": {"width": 1920, "height": 1080, "device_scale_factor": 2}
+  },
+  "inputs": [
+    {
+      "key": "transactions",
+      "label": "Transactions CSV",
+      "required": true,
+      "accepted_extensions": ["csv"],
+      "required_columns": ["transaction_id", "transaction_date", "customer_id", "amount"]
+    },
+    {
+      "key": "customers",
+      "label": "Customers CSV",
+      "required": true,
+      "accepted_extensions": ["csv"],
+      "required_columns": ["customer_id", "customer_name", "segment"]
+    },
+    {
+      "key": "targets",
+      "label": "Targets CSV",
+      "required": true,
+      "accepted_extensions": ["csv"],
+      "required_columns": ["segment", "target_amount"]
+    }
+  ]
+}

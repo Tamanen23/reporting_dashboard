@@ -1,0 +1,35 @@
+{
+  "status": "confirmed_from_User List-22-07-2026.xlsx",
+  "workbook_sha256": "GENERATED_IN_RUN_MANIFEST",
+  "worksheet": "User List-28",
+  "header_row": 1,
+  "mappings": {
+    "ID": "player_id",
+    "User": "username",
+    "Email": "email",
+    "Phone": "mobile_number",
+    "Auth type": "auth_type",
+    "Date of Birth": "date_of_birth",
+    "Tags": "tags",
+    "Extra data": "extra_data",
+    "Registered Date": "registration_date",
+    "Last Login": "last_login",
+    "Currency": "currency",
+    "Balance": "balance",
+    "Promo Balance": "promo_balance",
+    "Promo Code": "promo_code",
+    "Reg. finished": "registration_completed",
+    "Identity": "identity_status",
+    "Location": "location_status",
+    "Disabled": "disabled_status",
+    "Deleted": "deleted_status",
+    "Pending Transactions": "pending_transactions",
+    "Last deposit": "last_deposit_date",
+    "Status": "account_status"
+  },
+  "unavailable_spec_fields": [
+    "first_name",
+    "last_name",
+    "country"
+  ]
+}

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Betnabiso Registration Dashboard</title>
+  <link rel="stylesheet" href="{{ css_uri }}">
+</head>
+<body>
+<svg class="symbols" aria-hidden="true">
+  <symbol id="icon-users" viewBox="0 0 64 64"><circle cx="25" cy="20" r="11" fill="currentColor"/><circle cx="45" cy="23" r="9" fill="currentColor" opacity=".75"/><path d="M6 54c0-13 8-21 19-21s19 8 19 21H6z" fill="currentColor"/><path d="M38 36c12 0 19 7 19 18H45c0-7-2-13-7-18z" fill="currentColor" opacity=".75"/></symbol>
+  <symbol id="icon-check" viewBox="0 0 64 64"><circle cx="32" cy="32" r="24" fill="none" stroke="currentColor" stroke-width="7"/><path d="m19 32 9 9 18-20" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="icon-wallet" viewBox="0 0 64 64"><path d="M10 17h43v38H10z" fill="none" stroke="currentColor" stroke-width="5"/><path d="M10 17 46 7l4 10M39 30h19v14H39c-5 0-8-3-8-7s3-7 8-7z" fill="currentColor"/><circle cx="42" cy="37" r="2" fill="#050505"/></symbol>
+  <symbol id="icon-disabled" viewBox="0 0 64 64"><circle cx="23" cy="18" r="11" fill="currentColor"/><path d="M3 50c0-13 8-21 20-21 5 0 9 1 12 4-7 3-11 9-11 17H3z" fill="currentColor"/><circle cx="45" cy="44" r="15" fill="currentColor"/><path d="m39 38 12 12m0-12L39 50" stroke="#050505" stroke-width="5" stroke-linecap="round"/></symbol>
+  <symbol id="icon-hourglass" viewBox="0 0 64 64"><path d="M14 7h36M14 57h36M19 9c0 14 13 14 13 23S19 41 19 55m26-46c0 14-13 14-13 23s13 9 13 23" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><path d="m24 48 8-8 8 8zM24 16h16l-8 9z" fill="currentColor"/></symbol>
+  <symbol id="icon-calendar" viewBox="0 0 64 64"><rect x="8" y="12" width="48" height="44" rx="3" fill="none" stroke="currentColor" stroke-width="4"/><path d="M8 24h48M19 7v12M45 7v12" stroke="currentColor" stroke-width="4"/><path d="M17 32h7v7h-7zm12 0h7v7h-7zm12 0h7v7h-7zM17 44h7v7h-7zm12 0h7v7h-7z" fill="currentColor"/></symbol>
+  <symbol id="icon-trend" viewBox="0 0 64 64"><path d="M9 53h46M14 48V34h8v14m7 0V24h8v24m7 0V13h8v35" fill="currentColor"/><path d="m14 28 13-11 9 6 16-16" fill="none" stroke="currentColor" stroke-width="5"/><path d="m43 7h9v9" fill="none" stroke="currentColor" stroke-width="5"/></symbol>
+</svg>
+
+<main class="dashboard" data-report-ready="true">
+  <header class="masthead">
+    <div class="brand">
+      <img src="{{ logo_uri }}" alt="Betnabiso lion">
+      <div><strong>BET<span>NABISO</span></strong><small>ENTRE NOUS IL Y A QUE LA GAGNE</small></div>
+    </div>
+    <div class="title">
+      <h1>REGISTRATION DASHBOARD</h1>
+      <p>{{ period_start|upper }} – {{ period_end|upper }} <span>(EXCLUDING {{ excluded_date|upper }})</span></p>
+    </div>
+    <div class="date-boxes">
+      <div class="date-card"><svg><use href="#icon-calendar"/></svg><section><b>REPORT DATE</b><span>{{ report_date }}</span></section></div>
+      <div class="date-card period-card"><svg><use href="#icon-calendar"/></svg><section><b>REPORT PERIOD</b><span>{{ period_start }} – {{ period_end }}</span><small>(Excluding {{ excluded_date }})</small></section></div>
+    </div>
+  </header>
+
+  <section class="kpis">
+    {% for card in cards %}
+    <article class="kpi-card" style="--accent:{{ card.color }}">
+      <svg class="kpi-icon"><use href="#icon-{{ card.icon }}"/></svg>
+      <div class="kpi-copy">
+        <div class="kpi-label">{{ card.label }}</div>
+        <div class="kpi-value">{{ card.value }}</div>
+        <div class="kpi-rate">{{ card.sub }}</div>
+        <div class="kpi-sub">{% if loop.index == 1 %}All Time{% elif loop.index == 2 %}of Total Registrations{% elif loop.index == 3 %}of Total Registrations{% elif loop.index == 4 %}of Completed Registrations{% else %}of Total Registrations{% endif %}</div>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="middle">
+    <article class="panel funnel-panel">
+      <h2>REGISTRATION FUNNEL</h2>
+      <div class="funnel-content">
+        <img src="{{ funnel_uri }}" alt="Registration funnel">
+        <div class="conversion">
+          <h3>CONVERSION RATE</h3>
+          {% for rate in rates %}
+          <div class="conversion-row">
+            <div><b>{{ rate.label }}</b><small>({{ rate.formula }})</small></div>
+            <span class="arrow" style="color:{{ rate.color }}">▶</span>
+            <strong style="color:{{ rate.color }}">{{ rate.value }}%</strong>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+
+    <article class="panel stats-panel">
+      <h2>KEY REGISTRATION STATISTICS</h2>
+      <div class="stat-row"><svg class="blue"><use href="#icon-trend"/></svg><span>Average Registrations per Day</span><b>{{ average_registrations }}</b></div>
+      <div class="stat-row"><svg class="green"><use href="#icon-check"/></svg><span>Average Completed per Day</span><b>{{ average_completed }}</b></div>
+      <div class="stat-row"><svg class="gold"><use href="#icon-wallet"/></svg><span>Average FTD per Day</span><b>{{ average_ftd }}</b></div>
+      <div class="stat-row"><svg class="blue"><use href="#icon-users"/></svg><span>Highest Registration Day<small>({{ statistics[0].value.split(' • ')[0] }})</small></span><b>{{ statistics[0].value.split(' • ')[1] }}</b></div>
+      <div class="stat-row"><svg class="green"><use href="#icon-check"/></svg><span>Highest Completed Day<small>({{ statistics[1].value.split(' • ')[0] }})</small></span><b>{{ statistics[1].value.split(' • ')[1] }}</b></div>
+      <div class="stat-row"><svg class="gold"><use href="#icon-wallet"/></svg><span>Highest FTD Day<small>({{ statistics[2].value.split(' • ')[0] }})</small></span><b>{{ statistics[2].value.split(' • ')[1] }}</b></div>
+    </article>
+
+    <article class="panel trend-panel">
+      <h2>REGISTRATIONS TREND – LAST 10 DAYS</h2>
+      <img src="{{ trend_uri }}" alt="Last ten days registration chart">
+      <div class="trend-total"><span>Total (Last 10 Days)</span><b>{{ last_ten_total }}</b></div>
+    </article>
+  </section>
+
+  <section class="bottom">
+    <article class="panel breakdown-panel">
+      <h2>REGISTRATIONS BREAKDOWN</h2>
+      <table><thead><tr><th>Category</th><th>Count</th><th>% of Total Registrations</th></tr></thead><tbody>
+      {% for row in breakdown %}<tr><td><i style="--dot:{{ row.color }}"></i>{{ row.label }}</td><td>{{ row.count }}</td><td>{{ row.rate }}</td></tr>{% endfor %}
+      <tr class="total"><td>TOTAL</td><td>{{ cards[0].value }}</td><td>100.0%</td></tr>
+      </tbody></table>
+    </article>
+
+    <article class="panel daily-panel">
+      <h2>DAILY REGISTRATION SUMMARY</h2>
+      <table><thead><tr><th>Metric</th><th>Highest Day</th><th>Count</th></tr></thead><tbody>
+      {% for row in daily_summary %}<tr><td><i style="--dot:{{ row.color }}"></i>{{ row.label }}</td><td>{{ row.peak }}</td><td>{{ row.value }}</td></tr>{% endfor %}
+      </tbody></table>
+    </article>
+
+    <article class="panel insights-panel">
+      <h2>EXECUTIVE INSIGHTS</h2>
+      <ul class="insights">{% for insight in insights %}<li>{{ insight }}</li>{% endfor %}</ul>
+    </article>
+  </section>
+
+  <footer>
+    <span class="responsible"><b>18+</b> JOUEZ DE MANIÈRE RESPONSABLE</span>
+    <span class="support">◉ &nbsp; SERVICE CLIENT : <b>+242 05 502 99 99</b></span>
+    <span class="licence">◇ &nbsp; LICENCE OFFICIELLE <small>All amounts in XAF</small></span>
+  </footer>
+</main>
+</body>
+</html>

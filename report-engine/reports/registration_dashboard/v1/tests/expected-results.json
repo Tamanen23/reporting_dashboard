@@ -1,0 +1,20 @@
+{
+  "summary": {
+    "total_registrations": 4,
+    "completed_registrations": 2,
+    "registered_and_deposited": 2,
+    "disabled_accounts": 1,
+    "pending_validation": 2
+  },
+  "rates": {
+    "completion_rate": "50.00",
+    "deposited_percentage_of_total": "50.00",
+    "deposited_percentage_of_completed": "100.00",
+    "registered_and_deposited_rate_of_total": "50.00",
+    "registered_and_deposited_rate_of_completed": "100.00",
+    "disabled_account_percentage": "50.00",
+    "disabled_rate": "50.00",
+    "pending_validation_percentage": "50.00",
+    "pending_validation_rate": "50.00"
+  }
+}

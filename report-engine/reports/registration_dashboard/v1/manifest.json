@@ -1,0 +1,62 @@
+{
+  "code": "registration_dashboard",
+  "name": "Betnabiso Registration Dashboard",
+  "description": "Registration, completion and registration-to-deposit performance from the confirmed ADV User List workbook.",
+  "definition_version": "1.2.0",
+  "calculation_version": "1.2.0-provisional.1",
+  "template_version": "1.2.0",
+  "reporting_period_type": "date_range",
+  "processor": "reports.registration_dashboard.v1.report.RegistrationDashboardReport",
+  "template": "reports/registration_dashboard/v1/templates/dashboard.html",
+  "source": {
+    "worksheet": "User List-28",
+    "header_row": 1,
+    "column_mapping": "column_mapping.json"
+  },
+  "inputs": [
+    {
+      "key": "user_list",
+      "label": "User List workbook",
+      "required": true,
+      "accepted_extensions": ["xlsx"],
+      "canonical_required_fields": [
+        "player_id",
+        "username",
+        "registration_date",
+        "registration_completed",
+        "account_status",
+        "disabled_status",
+        "deleted_status",
+        "last_deposit_date"
+      ]
+    }
+  ],
+  "outputs": [
+    "registration_dataset.parquet",
+    "calculated-results.json",
+    "validation-log.json",
+    "reconciliation-report.json",
+    "dashboard.html",
+    "dashboard.pdf",
+    "dashboard.png",
+    "manifest.json"
+  ],
+  "configuration": {
+    "include_report_date": {"default": false, "provisional": true},
+    "completed_registration_values": {"default": ["completed", "complete", "verified", "yes", "true", "1"], "provisional": true},
+    "duplicate_player_id_rule": {"default": "reject_generation", "allowed": ["reject_generation", "keep_first", "keep_latest"], "provisional": true},
+    "pending_validation_definition": {"default": "registration_not_completed", "allowed": ["registration_not_completed", "configured_account_status"], "provisional": true},
+    "exclude_deleted_accounts": {"default": true, "provisional": true},
+    "disabled_rate_denominator": {"default": "completed_registrations", "allowed": ["total_registrations", "completed_registrations"], "provisional": true},
+    "registered_and_deposited": {"default": "valid_last_deposit_date_excluding_disabled", "provisional": true},
+    "average_day_denominator": {"default": "included_calendar_days", "allowed": ["active_registration_days", "included_calendar_days"], "provisional": true},
+    "clip_period_to_latest_registration_date": {"default": true, "provisional": false}
+  },
+  "rendering": {
+    "pdf": {"width": 1536, "height": 1024, "print_background": true},
+    "png": {"width": 1536, "height": 1024},
+    "theme": "betnabiso_registration_reference_v1",
+    "reference": "22-07 Registrations.png",
+    "local_brand_asset": "assets/Favicon.jpeg"
+  }
+}

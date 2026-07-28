@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1536,height=1024">
+  <link rel="stylesheet" href="{{ css_uri }}">
+  <style>
+    @font-face{font-family:DashboardNarrow;src:url('{{ font_uri }}')}@font-face{font-family:DashboardNarrow;src:url('{{ font_bold_uri }}');font-weight:700}
+    html,body{font-family:DashboardNarrow,Arial,sans-serif}
+    h1,h2,h3,.card b,.card strong,.brand b{font-family:DashboardNarrow,Arial,sans-serif;font-weight:700;letter-spacing:.4px}
+    .title h1{font-size:29px;white-space:nowrap}.title p{font-size:19px}
+    .date-box strong{display:flex;align-items:center;gap:9px}.date-box strong i{font-style:normal;font-size:25px}
+    .dashboard{overflow:hidden}.cards{grid-template-columns:repeat(6,minmax(0,1fr))}
+    .card{min-width:0;overflow:hidden;display:grid;grid-template-columns:58px minmax(0,1fr);align-items:center;padding:10px 5px;text-align:center}
+    .card>div:last-child{min-width:0}.card-icon{font-size:58px;line-height:1;font-family:Arial,sans-serif;font-weight:700}
+    .card h3{font-family:DashboardNarrow,Arial,sans-serif;font-weight:700;font-size:15px}
+    .card b{font-size:35px}.card strong{font-size:23px;white-space:nowrap}.card p{font-size:16px}
+    .lime .card-icon,.lime h3,.lime strong{color:#e3ad12}
+  </style>
+  <title>Deposits, Withdrawals &amp; Bonus Dashboard</title>
+</head>
+<body>
+<main class="dashboard" data-report-ready="true">
+  <header>
+    <div class="brand"><img src="{{ logo_uri }}"><div><b>BET<span>NABISO</span></b><small>ENTRE NOUS IL Y A QUE LA GAGNE</small></div></div>
+    <div class="title">
+      <h1>DEPOSITS, WITHDRAWALS &amp; BONUS DASHBOARD</h1>
+      <p>{{ datefmt(period_start)|upper }} – {{ datefmt(period_end)|upper }} (EXCLUDING {{ datefmt(excluded_date)|upper }})</p>
+    </div>
+    <div class="date-box"><strong><i>▦</i> REPORT DATE</strong><span>{{ datefmt(report_date) }}</span></div>
+    <div class="date-box period"><strong><i>▦</i> REPORT PERIOD</strong><span>{{ datefmt(period_start) }} – {{ datefmt(period_end) }}</span><small>(Excluding {{ datefmt(excluded_date) }})</small></div>
+  </header>
+
+  <section class="cards">
+    <article class="card green"><div class="card-icon">▱</div><div><h3>TOTAL DEPOSITS</h3><b>{{ fmt(summary.deposit_count) }}</b><p>Transactions</p><strong>XAF {{ fmt(summary.deposit_amount) }}</strong></div></article>
+    <article class="card red"><div class="card-icon">▰</div><div><h3>TOTAL WITHDRAWALS</h3><b>{{ fmt(summary.withdrawal_count) }}</b><p>Transactions</p><strong>XAF {{ fmt(summary.withdrawal_amount) }}</strong></div></article>
+    <article class="card lime"><div class="card-icon">⟳</div><div><h3>NET CASH FLOW</h3><strong>XAF {{ fmt(summary.net_cash_flow) }}</strong><p>(Deposits – Withdrawals)</p></div></article>
+    <article class="card blue"><div class="card-icon">♁</div><div><h3>BONUS CREDITED</h3><b>{{ fmt(summary.bonus_credited_count) }}</b><p>Bonus Transactions</p><strong>XAF {{ fmt(summary.bonus_credited_amount) }}</strong></div></article>
+    <article class="card purple"><div class="card-icon">⟳</div><div><h3>BONUS CONVERTED</h3><strong>XAF {{ fmt(summary.bonus_converted_amount) }}</strong></div></article>
+    <article class="card cyan"><div class="card-icon">▰</div><div><h3>RETAIL DEPOSITS</h3><b>{{ fmt(summary.retail_deposit_count) }}</b><p>Transactions</p><strong>XAF {{ fmt(summary.retail_deposit_amount) }}</strong></div></article>
+  </section>
+
+  <section class="middle">
+    <div class="panel trend">
+      <h2>DEPOSITS &amp; WITHDRAWALS TREND – LAST 10 DAYS</h2>
+      <img src="{{ chart_uri }}">
+      <h2 class="summary-title">LAST 10 DAYS SUMMARY ({{ datefmt(last_ten[0].date)|upper }} – {{ datefmt(last_ten[-1].date)|upper }})</h2>
+      <div class="three"><div class="blue">TOTAL DEPOSITS<strong>XAF {{ fmt(last_ten_summary.deposit_amount) }}</strong></div><div class="red">TOTAL WITHDRAWALS<strong>XAF {{ fmt(last_ten_summary.withdrawal_amount) }}</strong></div><div class="{{ 'red' if last_ten_summary.net_cash_flow < 0 else 'lime' }}">NET CASH FLOW<strong>XAF {{ fmt(last_ten_summary.net_cash_flow) }}</strong></div></div>
+    </div>
+    <div class="right-stack">
+      <div class="panel highlights"><h2>OPERATIONAL HIGHLIGHTS</h2>
+        <div><span>↗</span><p>HIGHEST DEPOSIT DAY<small>{{ datefmt(highest_deposit_day.date) }}</small></p><strong class="lime">XAF {{ fmt(highest_deposit_day.deposit_amount) }}</strong></div>
+        <div><span>↘</span><p>HIGHEST WITHDRAWAL DAY<small>{{ datefmt(highest_withdrawal_day.date) }}</small></p><strong class="red">XAF {{ fmt(highest_withdrawal_day.withdrawal_amount) }}</strong></div>
+        <div><span>▰</span><p>RETAIL DEPOSITS<small>{{ fmt(summary.retail_deposit_count) }} Transactions</small></p><strong class="cyan">XAF {{ fmt(summary.retail_deposit_amount) }}</strong></div>
+        <div><span>⚖</span><p>DEPOSIT / WITHDRAWAL RATIO<small>(By Amount)</small></p><strong>XAF {{ '%.2f'|format(summary.deposit_withdrawal_ratio) }} : 1</strong></div>
+        <div><span>%</span><p>BONUS CONVERSION RATE<small>(Converted / Credited)</small></p><strong class="purple">{{ pct(summary.bonus_conversion_rate) }}%</strong></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <div class="panel channel-table">
+      <table><thead><tr><th rowspan="2">METRIC</th><th colspan="2" class="blue">DEPOSITS</th><th colspan="2" class="red">WITHDRAWALS</th><th class="gold">NET CASH FLOW</th></tr><tr><th>COUNT</th><th>AMOUNT (XAF)</th><th>COUNT</th><th>AMOUNT (XAF)</th><th>AMOUNT (XAF)</th></tr></thead>
+      <tbody>{% for row in channels %}<tr><td>{{ row.label }}</td><td>{{ fmt(row.deposit_count) }}</td><td>XAF {{ fmt(row.deposit_amount) }}</td><td>{{ fmt(row.withdrawal_count) }}</td><td>XAF {{ fmt(row.withdrawal_amount) }}</td><td>XAF {{ fmt(row.net_cash_flow) }}</td></tr>{% endfor %}
+      <tr class="total"><td>TOTAL</td><td>{{ fmt(summary.deposit_count) }}</td><td>XAF {{ fmt(summary.deposit_amount) }}</td><td>{{ fmt(summary.withdrawal_count) }}</td><td>XAF {{ fmt(summary.withdrawal_amount) }}</td><td>XAF {{ fmt(summary.net_cash_flow) }}</td></tr></tbody></table>
+    </div>
+    <div class="panel insights"><h2>EXECUTIVE INSIGHTS</h2>{% for insight in insights %}<p>✓ <span>{{ insight }}</span></p>{% endfor %}</div>
+  </section>
+</main>
+</body>
+</html>

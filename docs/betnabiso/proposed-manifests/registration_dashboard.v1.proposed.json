@@ -1,0 +1,48 @@
+{
+  "status": "proposed_blocked_pending_source_inspection",
+  "code": "registration_dashboard",
+  "name": "Betnabiso Registration Dashboard",
+  "description": "Daily registration, completion and registration-to-deposit performance.",
+  "definition_version": "1.0.0-draft.1",
+  "calculation_version": "1.0.0-draft.1",
+  "template_version": "1.0.0-draft.1",
+  "reporting_period_type": "date_range",
+  "outputs": ["pdf", "png", "json", "prepared_dataset", "validation_log", "reconciliation_report", "manifest"],
+  "processor": "reports.registration_dashboard.v1.report.RegistrationDashboardReport",
+  "template": "reports/registration_dashboard/v1/templates/dashboard.html",
+  "display_order": 10,
+  "timeout_seconds": 900,
+  "retention_days": 365,
+  "allowed_roles": ["admin", "report_user"],
+  "inputs": [
+    {
+      "key": "user_list",
+      "kind": "uploaded_workbook",
+      "label": "User List workbook",
+      "required": true,
+      "accepted_extensions": ["xlsx"],
+      "accepted_mime_types": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+      "worksheet": {"selector": "pending_source_inspection"},
+      "canonical_required_fields": ["player_id", "username", "registration_date", "registration_completed", "account_status"],
+      "source_column_mapping": "pending_source_inspection"
+    }
+  ],
+  "prepared_datasets": [{"key": "registration_dataset", "format": "parquet", "grain": "one_valid_record_per_player_id", "schema_version": "1.0.0-draft.1"}],
+  "configuration": {
+    "timezone": "Indian/Mauritius",
+    "include_report_date": null,
+    "excluded_dates": [],
+    "test_account_rule": {"field": "username", "operator": "contains_case_insensitive", "value": "test"},
+    "completed_registration_values": null,
+    "duplicate_player_id_rule": null,
+    "pending_validation_rule": null,
+    "deleted_account_rule": null,
+    "disabled_rate_denominator": null,
+    "first_deposit_rule": null
+  },
+  "rendering": {
+    "pdf": {"page_size": "A3", "orientation": "landscape", "print_background": true},
+    "png": {"width": 2560, "height": 1440, "device_scale_factor": 2},
+    "theme": "betnabiso_dark_gold_v1"
+  }
+}
