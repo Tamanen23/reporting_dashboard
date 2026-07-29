@@ -5,7 +5,7 @@
         </header>
         <section class="panel">
             <div class="panel-header"><div><h2>Report configuration</h2><p>Fields and source requirements update automatically for each dashboard.</p></div><span class="badge">Step 1 of 1</span></div>
-            <form method="post" action="{{ route('reports.store') }}" enctype="multipart/form-data">
+            <form id="report-generation-form" method="post" action="{{ route('reports.store') }}" enctype="multipart/form-data">
                 @csrf
                 <div class="form-grid">
                     <div class="field full">
@@ -26,7 +26,7 @@
                     <div class="field" id="excluded-dates"><label for="excluded_date">Excluded date <span class="optional">Optional</span></label><input id="excluded_date" name="excluded_dates[]" type="date" value="{{ old('excluded_dates.0') }}"><p class="field-help">Use only when a specific day must be omitted from calculations.</p></div>
                     <div class="form-section" id="dynamic-inputs"><p class="muted tiny">Select a dashboard to see its required source file.</p></div>
                 </div>
-                <div class="actions"><button class="button" type="submit">Generate report <span aria-hidden="true">→</span></button><span class="muted tiny">Processing continues safely in the background.</span></div>
+                <div class="actions"><button id="generate-report-button" class="button" type="submit"><span class="button-label">Generate report</span> <span class="button-icon" aria-hidden="true">→</span></button><span class="muted tiny">Processing continues safely in the background.</span></div>
             </form>
         </section>
     </div>
@@ -41,6 +41,8 @@
         const target = document.getElementById('dynamic-inputs');
         const periodStart = document.getElementById('reporting_period_start');
         const periodEnd = document.getElementById('reporting_period_end');
+        const generationForm = document.getElementById('report-generation-form');
+        const generateButton = document.getElementById('generate-report-button');
         const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
         const sourceLabels = {
             registration_results: 'Registration report',
@@ -103,6 +105,24 @@
         select.addEventListener('change', renderInputs);
         periodStart.addEventListener('change', renderInputs);
         periodEnd.addEventListener('change', renderInputs);
+        generationForm.addEventListener('submit', event => {
+            if (generationForm.dataset.submitting === 'true') {
+                event.preventDefault();
+                return;
+            }
+            generationForm.dataset.submitting = 'true';
+            generateButton.disabled = true;
+            generateButton.setAttribute('aria-busy', 'true');
+            generateButton.querySelector('.button-label').textContent = 'Submitting report…';
+            generateButton.querySelector('.button-icon').textContent = '';
+        });
+        window.addEventListener('pageshow', () => {
+            generationForm.dataset.submitting = 'false';
+            generateButton.disabled = false;
+            generateButton.removeAttribute('aria-busy');
+            generateButton.querySelector('.button-label').textContent = 'Generate report';
+            generateButton.querySelector('.button-icon').textContent = '→';
+        });
         renderInputs();
     </script>
 </x-layouts.app>

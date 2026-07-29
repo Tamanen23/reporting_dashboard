@@ -190,6 +190,23 @@ h2 { margin-bottom: 7px; font-size: 20px; letter-spacing: -.015em; }
     transition: .18s ease;
 }
 .button:hover { transform: translateY(-1px); filter: brightness(1.06); }
+.button:disabled, button.button:disabled {
+    cursor: wait;
+    opacity: .72;
+    transform: none;
+    filter: saturate(.72);
+    box-shadow: none;
+}
+.button[aria-busy="true"]::before {
+    content: "";
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(11, 15, 13, .3);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: button-spin .7s linear infinite;
+}
+@keyframes button-spin { to { transform: rotate(360deg); } }
 .button.secondary { border-color: var(--line-strong); color: var(--text-soft); background: var(--surface-soft); box-shadow: none; }
 .button.secondary:hover { color: var(--text); border-color: #595f5a; }
 

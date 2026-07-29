@@ -51,6 +51,9 @@ final class ReportRegistryAndUploadTest extends TestCase
         $response->assertOk()
             ->assertSee('Registration Dashboard')
             ->assertSee('User List Report')
+            ->assertSee('id="report-generation-form"', false)
+            ->assertSee('id="generate-report-button"', false)
+            ->assertSee("generationForm.dataset.submitting === 'true'", false)
             ->assertSee('inputs[${input.key}]', false)
             ->assertSee('source_generations[${key}]', false)
             ->assertSee('Overall Performance Dashboard');
