@@ -1,9 +1,7 @@
 <x-layouts.app title="Sign in">
     <div class="login-wrap">
         <section class="panel login-card">
-            <div class="login-brand" aria-hidden="true">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M7 10V8a5 5 0 0 1 10 0v2M6 10h12a1 1 0 0 1 1 1v8H5v-8a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 14v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            </div>
+            <div class="login-brand"><img src="{{ asset('betnabiso-logo.jpeg') }}" alt="Betnabiso"></div>
             <p class="eyebrow">Secure workspace</p>
             <h1>Welcome back</h1>
             <p class="lead">Sign in to generate, review and download operational reports.</p>

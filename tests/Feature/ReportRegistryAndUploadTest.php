@@ -50,6 +50,7 @@ final class ReportRegistryAndUploadTest extends TestCase
         $response = $this->actingAs(User::factory()->create())->get(route('reports.create'));
         $response->assertOk()
             ->assertSee('Registration Dashboard')
+            ->assertSee('betnabiso-logo.jpeg')
             ->assertSee('User List Report')
             ->assertSee('id="report-generation-form"', false)
             ->assertSee('id="generate-report-button"', false)

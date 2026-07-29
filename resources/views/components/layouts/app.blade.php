@@ -6,7 +6,8 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="#080909">
     <title>{{ $title ?? 'Report Automation' }} · Betnabiso</title>
-    <link rel="icon" href="{{ asset('favicon.ico') }}">
+    <link rel="icon" type="image/jpeg" href="{{ asset('betnabiso-logo.jpeg') }}">
+    <link rel="apple-touch-icon" href="{{ asset('betnabiso-logo.jpeg') }}">
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800,900" rel="stylesheet">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -15,9 +16,7 @@
     <header class="app-header">
         <div class="nav-shell">
             <a class="brand" href="{{ auth()->check() ? route('reports.create') : route('login') }}">
-                <span class="brand-mark" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="M5 19V9.8L12 5l7 4.8V19M8.5 19v-6h7v6M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </span>
+                <span class="brand-mark"><img src="{{ asset('betnabiso-logo.jpeg') }}" alt=""></span>
                 <span><span class="brand-name">BETNABISO</span><span class="brand-product">Reporting workspace</span></span>
             </a>
             @auth

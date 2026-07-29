@@ -73,11 +73,11 @@ button, .button { -webkit-tap-highlight-color: transparent; }
     height: 38px;
     border: 1px solid rgb(229 184 41 / 42%);
     border-radius: 11px;
-    color: #080909;
-    background: linear-gradient(145deg, var(--gold-bright), #bd8a0c);
+    overflow: hidden;
+    background: #050202;
     box-shadow: 0 8px 25px rgb(229 184 41 / 16%);
 }
-.brand-mark svg { width: 21px; height: 21px; }
+.brand-mark img { width: 100%; height: 100%; object-fit: cover; }
 .brand-name { display: block; font-size: 15px; font-weight: 800; letter-spacing: .01em; }
 .brand-product { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .nav-side, .nav-links { display: flex; align-items: center; }
@@ -340,7 +340,8 @@ h2 { margin-bottom: 7px; font-size: 20px; letter-spacing: -.015em; }
 
 .login-wrap { min-height: calc(100vh - 170px); display: grid; place-items: center; }
 .login-card { width: min(440px, 100%); padding: clamp(26px, 5vw, 40px); }
-.login-brand { width: 52px; height: 52px; display: grid; place-items: center; margin-bottom: 24px; border-radius: 14px; color: #111; background: linear-gradient(145deg, var(--gold-bright), #c08b0b); }
+.login-brand { width: 60px; height: 60px; overflow: hidden; margin-bottom: 24px; border: 1px solid rgb(229 184 41 / 35%); border-radius: 16px; background: #050202; box-shadow: 0 10px 30px rgb(229 184 41 / 12%); }
+.login-brand img { width: 100%; height: 100%; object-fit: cover; }
 .login-card .actions .button { width: 100%; }
 .login-help { margin: 22px 0 0; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; text-align: center; }
 
