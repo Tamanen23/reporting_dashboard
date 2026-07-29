@@ -11,7 +11,7 @@
                 <a class="history-item" href="{{ route('reports.show', $generation) }}">
                     <div class="history-report"><strong>{{ $generation->reportDefinition->name }}</strong><span>Created {{ $generation->created_at->diffForHumans() }}</span></div>
                     <div class="history-period"><span class="history-cell-label">Reporting period</span><span class="history-value">{{ optional($generation->reporting_period_start)->format('d M') }} → {{ optional($generation->reporting_period_end)->format('d M Y') }}</span></div>
-                    <div><span class="history-cell-label">Status</span><span class="history-value"><span class="badge {{ $statusClass }}">{{ str($generation->status->value)->replace('_',' ')->title() }}</span></span></div>
+                    <div class="history-status"><span class="history-cell-label">Status</span><span class="history-value"><span class="badge {{ $statusClass }}">{{ str($generation->status->value)->replace('_',' ')->title() }}</span></span></div>
                     <div class="history-progress"><span class="history-cell-label">Progress</span><span class="history-value">{{ $generation->progress_percentage }}%</span><div class="mini-progress"><span style="width:{{ $generation->progress_percentage }}%"></span></div></div>
                     <span class="chevron" aria-hidden="true">›</span>
                 </a>
