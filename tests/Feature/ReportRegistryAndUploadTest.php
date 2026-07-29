@@ -30,7 +30,7 @@ final class ReportRegistryAndUploadTest extends TestCase
     {
         self::assertSame(5, ReportDefinition::query()->count());
         self::assertSame(
-            ['registration_dashboard', 'deposits_withdrawals_bonus_dashboard', 'cash_operations_dashboard'],
+            ['registration_dashboard', 'deposits_withdrawals_bonus_dashboard', 'cash_operations_dashboard', 'player_activity_retention_dashboard', 'overall_performance_dashboard'],
             ReportDefinition::query()->where('is_active', true)->orderBy('display_order')->pluck('code')->all(),
         );
         $registration = ReportDefinition::query()->with('inputs')->where('code', 'registration_dashboard')->firstOrFail();
@@ -38,6 +38,11 @@ final class ReportRegistryAndUploadTest extends TestCase
         self::assertSame('user_list', $registration->inputs->sole()->input_key);
         $payments = ReportDefinition::query()->with('inputs')->where('code', 'deposits_withdrawals_bonus_dashboard')->firstOrFail();
         self::assertSame('payment_transactions', $payments->inputs->sole()->input_key);
+        $playerActivity = ReportDefinition::query()->with('inputs')->where('code', 'player_activity_retention_dashboard')->firstOrFail();
+        self::assertSame(
+            ['user_list', 'payment_transactions', 'bet_legs'],
+            $playerActivity->inputs->sortBy('display_order')->pluck('input_key')->all(),
+        );
     }
 
     public function test_dynamic_form_is_driven_by_the_registration_input_definition(): void
@@ -47,7 +52,18 @@ final class ReportRegistryAndUploadTest extends TestCase
             ->assertSee('Registration Dashboard')
             ->assertSee('User List Report')
             ->assertSee('inputs[${input.key}]', false)
-            ->assertSee('coming later');
+            ->assertSee('source_generations[${key}]', false)
+            ->assertSee('Overall Performance Dashboard');
+    }
+
+    public function test_generation_pipeline_is_available_to_authenticated_users(): void
+    {
+        $this->actingAs(User::factory()->create())
+            ->get(route('reports.pipeline'))
+            ->assertOk()
+            ->assertSee('Generation pipeline')
+            ->assertSee('Active')
+            ->assertSee('Successful');
     }
 
     public function test_wrong_workbook_is_rejected_without_dispatching_any_processor(): void

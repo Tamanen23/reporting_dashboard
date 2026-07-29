@@ -14,6 +14,11 @@ from reports.deposits_withdrawals_bonus_dashboard.v1 import (
 from reports.deposits_withdrawals_bonus_dashboard.v1.config import PaymentsConfig
 from reports.registration_dashboard.v1 import RegistrationDashboardReport
 from reports.registration_dashboard.v1.config import RegistrationConfig
+from reports.player_activity_retention_dashboard.v1 import (
+    PlayerActivityRetentionDashboardReport,
+)
+from reports.player_activity_retention_dashboard.v1.config import PlayerActivityConfig
+from reports.overall_performance_dashboard.v1 import OverallPerformanceDashboardReport
 
 app = FastAPI(title="Report Automation Engine", docs_url=None, redoc_url=None)
 
@@ -80,6 +85,41 @@ class CashOperationsRequest(BaseModel):
     report_date: date
     reporting_period_start: date
     reporting_period_end: date
+    generation_uuid: str
+
+
+class PlayerActivityRules(BaseModel):
+    betting_source: Literal["bet_legs"] = "bet_legs"
+    settled_bet_statuses: list[str] = Field(default_factory=lambda: ["lost", "won"])
+    dormancy_days: int = Field(default=30, ge=1, le=365)
+    registration_completed_values: list[str] = Field(default_factory=lambda: ["yes", "completed", "verified", "true", "1"])
+    successful_payment_statuses: list[str] = Field(default_factory=lambda: ["completed [approved]"])
+    exclude_disabled_accounts: bool = True
+    exclude_deleted_accounts: bool = True
+    vip_percentile: float = Field(default=0.01, gt=0, le=0.20)
+    value_basis: Literal["lifetime_deposits"] = "lifetime_deposits"
+
+
+class PlayerActivityRequest(BaseModel):
+    input_paths: dict[str, Path]
+    work_directory: Path
+    report_date: date
+    reporting_period_start: date
+    reporting_period_end: date
+    excluded_dates: list[date] = Field(default_factory=list)
+    rules: PlayerActivityRules = Field(default_factory=PlayerActivityRules)
+    generation_uuid: str
+
+
+class OverallPerformanceRequest(BaseModel):
+    input_paths: dict[str, Path]
+    provenance: dict[str, dict] = Field(default_factory=dict)
+    work_directory: Path
+    report_date: date
+    reporting_period_start: date
+    reporting_period_end: date
+    excluded_dates: list[date] = Field(default_factory=list)
+    rules: dict = Field(default_factory=dict)
     generation_uuid: str
 
 
@@ -199,4 +239,65 @@ def generate_cash_operations(request: CashOperationsRequest) -> dict[str, str]:
             status_code=422,
             detail={"code": "CASH_OPERATIONS_CALCULATION_FAILED", "message": str(error)},
         ) from error
+    return {key: str(path) for key, path in artifacts.items()}
+
+
+@app.post("/v1/player-activity/generate")
+def generate_player_activity(request: PlayerActivityRequest) -> dict[str, str]:
+    for path in [*request.input_paths.values(), request.work_directory]:
+        if not path.is_absolute() or "/reports" not in str(path):
+            raise HTTPException(status_code=400, detail="Paths must be inside /reports.")
+    try:
+        artifacts = PlayerActivityRetentionDashboardReport(
+            PlayerActivityConfig(
+                betting_source=request.rules.betting_source,
+                settled_bet_statuses=frozenset(value.casefold() for value in request.rules.settled_bet_statuses),
+                dormancy_days=request.rules.dormancy_days,
+                completed_values=frozenset(value.casefold() for value in request.rules.registration_completed_values),
+                successful_statuses=frozenset(value.casefold() for value in request.rules.successful_payment_statuses),
+                excluded_dates=frozenset(request.excluded_dates),
+                exclude_disabled_accounts=request.rules.exclude_disabled_accounts,
+                exclude_deleted_accounts=request.rules.exclude_deleted_accounts,
+                vip_percentile=request.rules.vip_percentile,
+                value_basis=request.rules.value_basis,
+            )
+        ).run(
+            request.input_paths,
+            request.work_directory,
+            report_date=request.report_date,
+            reporting_period_start=request.reporting_period_start,
+            reporting_period_end=request.reporting_period_end,
+            generation_uuid=request.generation_uuid,
+        )
+    except ReportEngineError as error:
+        raise HTTPException(
+            status_code=422 if not error.retryable else 503,
+            detail={"code": error.code, "message": str(error), "context": error.context},
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "PLAYER_ACTIVITY_CALCULATION_FAILED", "message": str(error)},
+        ) from error
+    return {key: str(path) for key, path in artifacts.items()}
+
+
+@app.post("/v1/overall-performance/generate")
+def generate_overall_performance(request: OverallPerformanceRequest) -> dict[str, str]:
+    for path in [*request.input_paths.values(), request.work_directory]:
+        if not path.is_absolute() or "/reports" not in str(path):
+            raise HTTPException(status_code=400, detail="Paths must be inside /reports.")
+    try:
+        artifacts = OverallPerformanceDashboardReport().run(
+            request.input_paths, request.provenance, request.work_directory,
+            report_date=request.report_date,
+            reporting_period_start=request.reporting_period_start,
+            reporting_period_end=request.reporting_period_end,
+            generation_uuid=request.generation_uuid,
+        )
+    except ReportEngineError as error:
+        raise HTTPException(status_code=422 if not error.retryable else 503,
+                            detail={"code": error.code, "message": str(error), "context": error.context}) from error
+    except (KeyError, TypeError, ValueError) as error:
+        raise HTTPException(status_code=422, detail={"code": "OVERALL_SOURCE_SCHEMA_INVALID", "message": str(error)}) from error
     return {key: str(path) for key, path in artifacts.items()}

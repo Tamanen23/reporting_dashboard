@@ -7,8 +7,11 @@
             'calculated_results' => ['label' => 'Calculated Results', 'type' => 'JSON', 'description' => 'KPIs, trends and executive insights'],
             'registration_dataset' => ['label' => 'Registration Dataset', 'type' => 'PARQUET', 'description' => 'Validated prepared registration data'],
             'payment_dataset' => ['label' => 'Payment Transactions', 'type' => 'PARQUET', 'description' => 'Validated deposits and withdrawals'],
+            'chart_overall_trends' => ['label' => 'Overall Performance Trends', 'type' => 'PNG', 'description' => 'Registration, payments and GGR daily trends'],
             'bonus_dataset' => ['label' => 'Bonus Summary', 'type' => 'PARQUET', 'description' => 'Workbook-derived aggregate bonus data'],
             'betting_dataset' => ['label' => 'Betting Dataset', 'type' => 'PARQUET', 'description' => 'Validated Cash Operations transactions'],
+            'master_player_dataset' => ['label' => 'Master Player Dataset', 'type' => 'PARQUET', 'description' => 'Merged registration, payment and betting profile'],
+            'crm_segment_export' => ['label' => 'CRM Segment Export', 'type' => 'CSV', 'description' => 'Player-level activity and value classifications'],
             'reconciliation_report' => ['label' => 'Reconciliation Report', 'type' => 'JSON', 'description' => 'Calculation integrity checks'],
             'validation_log' => ['label' => 'Validation Log', 'type' => 'JSON', 'description' => 'Excluded records and validation reasons'],
             'manifest' => ['label' => 'Report Manifest', 'type' => 'JSON', 'description' => 'Versions, checksums and provenance'],
@@ -17,6 +20,14 @@
         $displayOutputs = $generation->outputs
             ->filter(fn ($output) => isset($outputDetails[$output->metadata['artifact_key'] ?? $output->output_type->value]))
             ->sortBy(fn ($output) => $outputOrder[$output->metadata['artifact_key'] ?? $output->output_type->value] ?? 99);
+        $outputCategories = [
+            'dashboard' => ['label' => 'Dashboard outputs', 'description' => 'Open, present or share the finished dashboard.', 'keys' => ['dashboard_html', 'pdf', 'png']],
+            'audit' => ['label' => 'Audit and verification', 'description' => 'Calculation evidence, integrity checks and generation provenance.', 'keys' => ['calculated_results', 'reconciliation_report', 'validation_log', 'manifest', 'chart_overall_trends']],
+            'data' => ['label' => 'Data exports', 'description' => 'Prepared datasets and operational exports. Handle player-level data carefully.', 'keys' => ['registration_dataset', 'payment_dataset', 'bonus_dataset', 'betting_dataset', 'master_player_dataset', 'crm_segment_export']],
+        ];
+        $categorizedOutputs = collect($outputCategories)->mapWithKeys(fn (array $category, string $key) => [
+            $key => $displayOutputs->filter(fn ($output) => in_array($output->metadata['artifact_key'] ?? $output->output_type->value, $category['keys'], true)),
+        ]);
         $context = $generation->processing_metadata['reporting_context'] ?? [];
         $excludedDates = $context['excluded_dates'] ?? [];
         $statusLabel = str($generation->status->value)->replace('_', ' ')->title();
@@ -33,7 +44,8 @@
         $archivedEventCount = $generation->events->count() - $timelineEvents->count();
     @endphp
 
-    <style>
+    {{-- Superseded by the shared application design system. --}}
+    <style media="not all">
         .report-shell{display:grid;gap:22px}
         .report-hero{position:relative;overflow:hidden;background:linear-gradient(135deg,#191919 0%,#101010 65%);border:1px solid #393939;border-radius:14px;padding:30px}
         .report-hero:before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:linear-gradient(#f5c431,#9f7410)}
@@ -74,14 +86,14 @@
                     <h1>{{ $generation->reportDefinition->name }}</h1>
                     <span class="generation-id">ID&nbsp; {{ $generation->uuid }}</span>
                 </div>
-                <a class="history-link" href="{{ route('reports.index') }}">← Report history</a>
+                <a class="button secondary" href="{{ route('reports.index') }}">← Report history</a>
             </div>
 
             <div class="summary-grid">
                 <div class="summary-card">
                     <span class="summary-label">Generation status</span>
                     <div class="status-row">
-                        <span class="status-pill">{{ $statusLabel }}</span>
+                        <span class="status-pill status-{{ str($generation->status->value)->slug() }}">{{ $statusLabel }}</span>
                         <span class="progress-copy">{{ $generation->progress_percentage }}% · {{ $stageLabel }}</span>
                     </div>
                     <div class="progress-refined"><span style="width:{{ $generation->progress_percentage }}%"></span></div>
@@ -102,28 +114,40 @@
         @endif
         @if($generation->error_message)<div class="notice error"><strong>{{ $generation->error_code }}</strong><br>{{ $generation->error_message }}</div>@endif
 
-        <section class="section-card">
+        <section class="section-card report-files-section">
             <div class="section-head"><div><h2>Report files</h2><p>Download the dashboard or inspect its supporting data and audit records.</p></div><span class="muted">{{ $displayOutputs->count() }} files</span></div>
-            <div class="output-grid">
-                @forelse($displayOutputs as $output)
-                    @php
-                        $artifactKey = $output->metadata['artifact_key'] ?? $output->output_type->value;
-                        $detail = $outputDetails[$artifactKey];
-                        $size = $output->size_bytes >= 1048576
-                            ? number_format($output->size_bytes / 1048576, 1).' MB'
-                            : number_format($output->size_bytes / 1024, 1).' KB';
-                    @endphp
-                    <a class="output-card" href="{{ route('reports.download',[$generation,$output]) }}">
-                        <span class="file-type">{{ $detail['type'] }}</span>
-                        <strong>{{ $detail['label'] }}</strong>
-                        <small>{{ $detail['description'] }}</small>
-                        <span class="file-meta"><span>{{ $size }}</span><span class="download-mark">↓</span></span>
-                    </a>
-                @empty
-                    <p class="muted">Outputs will appear here after processing.</p>
-                @endforelse
-            </div>
-            @if($generation->status === \App\Domain\Reports\Enums\ReportStatus::Failed)<form method="post" action="{{ route('reports.retry',$generation) }}" style="margin-top:18px">@csrf<button>Retry generation</button></form>@endif
+            @forelse($outputCategories as $categoryKey => $category)
+                @php $categoryOutputs = $categorizedOutputs[$categoryKey]; @endphp
+                @if($categoryOutputs->isNotEmpty())
+                    <div class="output-category output-category-{{ $categoryKey }}">
+                        <div class="output-category-head">
+                            <div><span class="output-category-icon">{{ $categoryKey === 'dashboard' ? '▣' : ($categoryKey === 'audit' ? '✓' : '⇩') }}</span><div><h3>{{ $category['label'] }}</h3><p>{{ $category['description'] }}</p></div></div>
+                            <span>{{ $categoryOutputs->count() }} {{ \Illuminate\Support\Str::plural('file', $categoryOutputs->count()) }}</span>
+                        </div>
+                        <div class="output-grid {{ $categoryKey === 'dashboard' ? 'output-grid-primary' : '' }}">
+                            @foreach($categoryOutputs as $output)
+                                @php
+                                    $artifactKey = $output->metadata['artifact_key'] ?? $output->output_type->value;
+                                    $detail = $outputDetails[$artifactKey];
+                                    $size = $output->size_bytes >= 1048576
+                                        ? number_format($output->size_bytes / 1048576, 1).' MB'
+                                        : number_format($output->size_bytes / 1024, 1).' KB';
+                                @endphp
+                                <a class="output-card {{ $categoryKey === 'dashboard' ? 'output-card-primary' : '' }}" href="{{ route('reports.download',[$generation,$output]) }}">
+                                    <span class="file-type">{{ $detail['type'] }}</span>
+                                    <strong>{{ $detail['label'] }}</strong>
+                                    <small>{{ $detail['description'] }}</small>
+                                    <span class="file-meta"><span>{{ $size }}</span><span class="download-mark">↓</span></span>
+                                </a>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+            @empty
+                <p class="muted">Outputs will appear here after processing.</p>
+            @endforelse
+            @if($displayOutputs->isEmpty())<p class="muted">Outputs will appear here after processing.</p>@endif
+            @if($generation->status === \App\Domain\Reports\Enums\ReportStatus::Failed)<form method="post" action="{{ route('reports.retry',$generation) }}" style="margin-top:18px">@csrf<button class="button" type="submit">Retry generation</button></form>@endif
         </section>
 
         <section class="section-card">

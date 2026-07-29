@@ -82,3 +82,11 @@ include = ["core*", "reports*"]
     "assets/*.ttf",
     "assets/*.txt",
 ]
+"reports.player_activity_retention_dashboard.v1" = [
+    "templates/*.html",
+    "tests/*.py",
+]
+"reports.overall_performance_dashboard.v1" = [
+    "templates/*.html",
+    "tests/*.py",
+]

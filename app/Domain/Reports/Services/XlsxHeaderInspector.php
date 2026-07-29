@@ -45,6 +45,27 @@ final class XlsxHeaderInspector
         'username' => ['user name'],
     ];
 
+    private const PLAYER_ACTIVITY_ALIASES = [
+        'player_id' => ['id', 'user id', 'user #'],
+        'username' => ['user', 'username', 'user name'],
+        'registration_date' => ['registered date'],
+        'registration_completed' => ['reg finished'],
+        'disabled_status' => ['disabled'],
+        'deleted_status' => ['deleted'],
+        'amount' => ['amount'],
+        'processed' => ['processed'],
+        'transaction_type' => ['type'],
+        'transaction_date' => ['processed date', 'date & time'],
+        'status' => ['status'],
+        'bet_id' => ['slip #'],
+        'cash_amount' => ['cash amount'],
+        'bet_date' => ['issue time'],
+        'game' => ['game'],
+        'slip_state' => ['slip state'],
+        'bet_status' => ['bet status'],
+        'stake' => ['stake'],
+    ];
+
     public function inspect(string $path, array $requiredCanonicalFields, ?string $expectedWorksheet = null, string $profile = 'registration_dashboard'): array
     {
         $zip = new ZipArchive;
@@ -93,6 +114,7 @@ final class XlsxHeaderInspector
             $aliasesByCanonical = match ($profile) {
                 'deposits_withdrawals_bonus_dashboard' => self::PAYMENT_ALIASES,
                 'cash_operations_dashboard' => self::CASH_OPERATIONS_ALIASES,
+                'player_activity_retention_dashboard' => self::PLAYER_ACTIVITY_ALIASES,
                 default => self::ALIASES,
             };
             foreach ($aliasesByCanonical as $canonical => $aliases) {

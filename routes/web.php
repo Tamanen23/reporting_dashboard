@@ -16,6 +16,7 @@ Route::middleware('guest')->group(function (): void {
 Route::middleware('auth')->group(function (): void {
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
     Route::get('/reports', [ReportGenerationController::class, 'index'])->name('reports.index');
+    Route::get('/pipeline', [ReportGenerationController::class, 'pipeline'])->name('reports.pipeline');
     Route::get('/reports/create', [ReportGenerationController::class, 'create'])->name('reports.create');
     Route::post('/reports', [ReportGenerationController::class, 'store'])->name('reports.store');
     Route::get('/reports/{report}', [ReportGenerationController::class, 'show'])->name('reports.show');

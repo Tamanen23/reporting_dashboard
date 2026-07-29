@@ -51,6 +51,7 @@ services:
       app: {condition: service_started}
       redis: {condition: service_healthy}
       report-engine: {condition: service_healthy}
+    restart: unless-stopped
 
   scheduler:
     build: {context: ., dockerfile: docker/php/Dockerfile}
@@ -58,6 +59,7 @@ services:
     working_dir: /var/www/html
     volumes: [".:/var/www/html"]
     depends_on: [app]
+    restart: unless-stopped
 
   report-engine:
     build: {context: ., dockerfile: docker/report-engine/Dockerfile}

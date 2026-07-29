@@ -47,30 +47,38 @@ final class GenerateRegistrationDashboard implements ShouldQueue
             return;
         }
         $reportCode = $generation->reportDefinition->code;
-        if (! in_array($reportCode, ['registration_dashboard', 'deposits_withdrawals_bonus_dashboard', 'cash_operations_dashboard'], true)) {
+        if (! in_array($reportCode, ['registration_dashboard', 'deposits_withdrawals_bonus_dashboard', 'cash_operations_dashboard', 'player_activity_retention_dashboard', 'overall_performance_dashboard'], true)) {
             throw new RuntimeException('The selected processor is not implemented.');
         }
 
         $isRegistration = $reportCode === 'registration_dashboard';
         $isPayments = $reportCode === 'deposits_withdrawals_bonus_dashboard';
+        $isPlayerActivity = $reportCode === 'player_activity_retention_dashboard';
+        $isOverall = $reportCode === 'overall_performance_dashboard';
         $inputKey = match ($reportCode) {
             'registration_dashboard' => 'user_list',
             'deposits_withdrawals_bonus_dashboard' => 'payment_transactions',
             'cash_operations_dashboard' => 'cash_operations',
+            'player_activity_retention_dashboard' => 'bet_legs',
+            'overall_performance_dashboard' => null,
         };
         $endpoint = match ($reportCode) {
             'registration_dashboard' => '/v1/registration/generate',
             'deposits_withdrawals_bonus_dashboard' => '/v1/deposits-withdrawals-bonus/generate',
             'cash_operations_dashboard' => '/v1/cash-operations/generate',
+            'player_activity_retention_dashboard' => '/v1/player-activity/generate',
+            'overall_performance_dashboard' => '/v1/overall-performance/generate',
         };
         $label = match ($reportCode) {
             'registration_dashboard' => 'Registration',
             'deposits_withdrawals_bonus_dashboard' => 'Deposits, Withdrawals & Bonus',
             'cash_operations_dashboard' => 'Cash Operations',
+            'player_activity_retention_dashboard' => 'Player Activity & Retention',
+            'overall_performance_dashboard' => 'Overall Performance',
         };
         $this->transition($generation, ReportStatus::Processing, ProcessingStage::StructuralValidation, 'PROCESSING_STARTED', "{$label} processing started.");
-        $input = $generation->files->firstWhere('input_key', $inputKey);
-        if ($input === null) {
+        $input = $inputKey ? $generation->files->firstWhere('input_key', $inputKey) : null;
+        if (! $isOverall && $input === null) {
             $this->failPermanently($generation, 'MISSING_REQUIRED_INPUT', 'The required workbook is missing.');
 
             return;
@@ -78,13 +86,18 @@ final class GenerateRegistrationDashboard implements ShouldQueue
         $context = $generation->processing_metadata['reporting_context'] ?? [];
         $rules = $isRegistration
             ? ($context['registration_rules'] ?? [])
-            : ($isPayments ? ($context['payment_rules'] ?? []) : []);
+            : ($isPayments
+                ? ($context['payment_rules'] ?? [])
+                : ($isPlayerActivity
+                    ? ($context['player_activity_rules'] ?? [])
+                    : ($isOverall ? ($context['overall_rules'] ?? new \stdClass) : [])));
         if ($isPayments && ($rules['daily_deposit_adjustments_xaf'] ?? null) === []) {
             unset($rules['daily_deposit_adjustments_xaf']);
         }
-        $workRelative = dirname($input->stored_path).'/work';
+        $workRelative = $isOverall
+            ? "overall_performance_dashboard/{$generation->reporting_period_start->format('Y-m-d')}/{$generation->uuid}/work"
+            : dirname($input->stored_path).'/work';
         $payload = [
-            'input_path' => $this->enginePath($input->stored_path),
             'work_directory' => $this->enginePath($workRelative),
             'report_date' => optional($generation->reporting_date)->format('Y-m-d'),
             'reporting_period_start' => optional($generation->reporting_period_start)->format('Y-m-d'),
@@ -93,6 +106,24 @@ final class GenerateRegistrationDashboard implements ShouldQueue
             'excluded_dates' => $context['excluded_dates'] ?? [],
             'rules' => $rules,
         ];
+        if (! $isOverall) {
+            $payload['input_path'] = $this->enginePath($input->stored_path);
+        }
+        if ($isPlayerActivity) {
+            unset($payload['input_path']);
+            $payload['input_paths'] = [
+                'user_list' => $this->enginePath($generation->files->firstWhere('input_key', 'user_list')->stored_path),
+                'payment_transactions' => $this->enginePath($generation->files->firstWhere('input_key', 'payment_transactions')->stored_path),
+                'bet_legs' => $this->enginePath($generation->files->firstWhere('input_key', 'bet_legs')->stored_path),
+            ];
+        }
+        if ($isOverall) {
+            $dependencies = $generation->processing_metadata['dependencies'] ?? [];
+            $payload['input_paths'] = collect($dependencies)->mapWithKeys(
+                fn (array $item, string $key) => [$key => $this->enginePath($item['stored_path'])]
+            )->all();
+            $payload['provenance'] = $dependencies;
+        }
 
         try {
             $response = Http::timeout($generation->reportDefinition->timeout_seconds)
@@ -191,11 +222,13 @@ final class GenerateRegistrationDashboard implements ShouldQueue
             'registration_dataset' => OutputType::PreparedDataset,
             'payment_dataset', 'bonus_dataset' => OutputType::PreparedDataset,
             'betting_dataset' => OutputType::PreparedDataset,
+            'master_player_dataset', 'crm_segment_export' => OutputType::PreparedDataset,
             'validation_log' => OutputType::ValidationLog,
             'reconciliation_report' => OutputType::ReconciliationReport,
             'calculated_results' => OutputType::Json,
-            'chart_funnel', 'chart_last_ten_days' => OutputType::Chart,
+            'chart_funnel', 'chart_last_ten_days', 'chart_player_segments', 'chart_overall_trends' => OutputType::Chart,
             default => OutputType::Json,
         };
     }
+
 }
