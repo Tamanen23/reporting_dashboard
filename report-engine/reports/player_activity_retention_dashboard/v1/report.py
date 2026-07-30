@@ -17,12 +17,13 @@ from pypdf import PdfReader
 
 from core.contracts import BaseReport
 from core.exceptions import InputValidationError
+from core.tabular import parse_datetime, parse_numeric, read_table
 
 from .config import PlayerActivityConfig
 
-VERSION = "1.0.0-provisional.2"
+VERSION = "1.0.0-provisional.5"
 USER_HEADERS = ["ID", "User", "Registered Date", "Reg. finished", "Disabled", "Deleted"]
-PAYMENT_HEADERS = ["Username", "User ID", "Amount", "Processed", "Type", "Processed Date", "Status"]
+PAYMENT_HEADERS = ["Username", "User ID", "Amount", "Gateway", "Processed", "Type", "Processed Date", "Status"]
 BET_LEGS_HEADERS = ["Slip #", "User #", "User Name", "Issue Time", "Slip State", "Bet Status", "Game", "Stake"]
 
 
@@ -52,7 +53,7 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         for name in ("prepared", "results", "charts", "render", "outputs", "manifest"):
             (work_directory / name).mkdir(parents=True, exist_ok=True)
 
-        effective_end = reporting_period_end - timedelta(days=1)
+        effective_end = reporting_period_end
         users, user_issues = self._read_users(input_paths["user_list"], effective_end)
         payments, payment_issues = self._read_payments(input_paths["payment_transactions"], effective_end)
         bets, bet_issues = self._read_bets(input_paths["bet_legs"], effective_end)
@@ -129,12 +130,16 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
             ],
             "source_mapping": {
                 "registration": {"sheet": self.config.user_worksheet, "player_id": "ID", "username": "User", "registration_date": "Registered Date", "completed": "Reg. finished", "disabled": "Disabled", "deleted": "Deleted"},
-                "payments": {"sheet": self.config.payment_worksheet, "player_id": "User ID", "username": "Username", "amount": "Amount", "type": "Type", "date": "Processed Date", "status": "Status"},
+                "payments": {"sheet": self.config.payment_worksheet, "player_id": "User ID", "username": "Username", "amount": "Amount", "gateway": "Gateway", "type": "Type", "date": "Processed Date", "status": "Status"},
                 "betting": {"sheet": self.config.bet_legs_worksheet, "bet_id": "Slip #", "player_id": "User #", "username": "User Name", "date": "Issue Time", "game": "Game", "slip_state": "Slip State", "bet_status": "Bet Status", "stake": "Stake"},
             },
             "configuration": {
                 "betting_source": self.config.betting_source,
                 "settled_bet_statuses": sorted(self.config.settled_bet_statuses),
+                "successful_payment_statuses": sorted(self.config.successful_statuses),
+                "allowed_payment_gateways": sorted(self.config.allowed_gateways),
+                "exclude_test_usernames": True,
+                "date_normalization": "All source timestamps are parsed and normalized to calendar dates.",
                 "dormancy_days": self.config.dormancy_days,
                 "exclude_disabled_accounts": self.config.exclude_disabled_accounts,
                 "exclude_deleted_accounts": self.config.exclude_deleted_accounts,
@@ -184,6 +189,15 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         return coverage
 
     def _headers(self, path: Path, sheet: str, required: list[str]) -> None:
+        if path.suffix.casefold() == ".csv":
+            headers = [
+                "Processed Date" if str(value).strip() == "Processed at" else str(value).strip()
+                for value in read_table(path).columns
+            ]
+            missing = [value for value in required if value not in headers]
+            if missing:
+                raise InputValidationError("A Player Activity CSV file has missing columns.", code="HEADERS_INVALID", context={"missing": missing})
+            return
         workbook = load_workbook(path, read_only=True, data_only=True)
         if sheet not in workbook.sheetnames:
             raise InputValidationError(f"Required worksheet '{sheet}' was not found.", code="WORKSHEET_MISSING")
@@ -195,22 +209,27 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
 
     def _read_users(self, path: Path, effective_end: date) -> tuple[pd.DataFrame, list[dict]]:
         self._headers(path, self.config.user_worksheet, USER_HEADERS)
-        frame = pd.read_excel(path, sheet_name=self.config.user_worksheet)
+        frame = read_table(path, sheet_name=self.config.user_worksheet)
         frame = frame.rename(columns={"ID": "player_id", "User": "username", "Registered Date": "registration_date", "Reg. finished": "registration_completed", "Disabled": "disabled", "Deleted": "deleted"})
         issues = []
-        blank = frame.player_id.isna()
+        blank = frame.player_id.isna() | frame.player_id.astype(str).str.strip().str.casefold().isin({"", "nan", "none", "null"})
         for row in frame.index[blank]: issues.append({"source": "user_list", "row": int(row) + 2, "code": "BLANK_PLAYER_ID"})
         frame = frame[~blank].copy()
         frame["player_id"] = frame.player_id.astype(str).str.replace(r"\.0$", "", regex=True)
         duplicates = frame.player_id.duplicated(keep=False)
         if duplicates.any():
             raise InputValidationError("Duplicate Player IDs are not allowed in the User List.", code="DUPLICATE_PLAYER_ID", context={"count": int(duplicates.sum())})
-        frame["registration_date"] = pd.to_datetime(frame.registration_date, errors="coerce").dt.normalize()
+        frame["registration_date"] = parse_datetime(
+            frame.registration_date, csv_source=path.suffix.casefold() == ".csv"
+        ).dt.normalize()
         frame = frame[frame.registration_date.dt.date <= effective_end].copy()
         frame["completed"] = frame.registration_completed.astype(str).str.strip().str.casefold().isin(self.config.completed_values)
         frame["disabled_flag"] = frame.disabled.astype(str).str.strip().str.casefold().eq("yes")
         frame["deleted_flag"] = frame.deleted.astype(str).str.strip().str.casefold().eq("yes")
         frame["test_flag"] = frame.username.astype(str).str.contains("test", case=False, na=False)
+        if frame["test_flag"].any():
+            issues.append({"source": "user_list", "code": "TEST_ACCOUNTS_EXCLUDED", "count": int(frame["test_flag"].sum())})
+            frame = frame[~frame["test_flag"]].copy()
         return frame[["player_id", "username", "registration_date", "completed", "disabled_flag", "deleted_flag", "test_flag"]], issues
 
     def _read_users_dataset(self, path: Path, effective_end: date) -> tuple[pd.DataFrame, list[dict]]:
@@ -232,6 +251,10 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         frame["registration_date"] = pd.to_datetime(frame.registration_date, errors="coerce").dt.normalize()
         frame = frame[frame.registration_date.dt.date <= effective_end].copy()
         frame["test_flag"] = frame.username.astype(str).str.contains("test", case=False, na=False)
+        issues = []
+        if frame["test_flag"].any():
+            issues.append({"source": "registration_dataset", "code": "TEST_ACCOUNTS_EXCLUDED", "count": int(frame["test_flag"].sum())})
+            frame = frame[~frame["test_flag"]].copy()
         duplicates = frame.player_id.duplicated(keep=False)
         if duplicates.any():
             raise InputValidationError(
@@ -239,30 +262,38 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
                 code="DUPLICATE_PLAYER_ID",
                 context={"count": int(duplicates.sum())},
             )
-        return frame[["player_id", "username", "registration_date", "completed", "disabled_flag", "deleted_flag", "test_flag"]], []
+        return frame[["player_id", "username", "registration_date", "completed", "disabled_flag", "deleted_flag", "test_flag"]], issues
 
     def _read_payments(self, path: Path, effective_end: date) -> tuple[pd.DataFrame, list[dict]]:
         self._headers(path, self.config.payment_worksheet, PAYMENT_HEADERS)
-        frame = pd.read_excel(path, sheet_name=self.config.payment_worksheet)
-        frame = frame.rename(columns={"User ID": "player_id", "Username": "username", "Amount": "amount", "Type": "transaction_type", "Processed Date": "transaction_date", "Status": "status", "Processed": "processed"})
+        frame = read_table(path, sheet_name=self.config.payment_worksheet)
+        frame = frame.rename(columns={"User ID": "player_id", "Username": "username", "Amount": "amount", "Gateway": "gateway", "Type": "transaction_type", "Processed Date": "transaction_date", "Processed at": "transaction_date", "Status": "status", "Processed": "processed"})
         frame["player_id"] = frame.player_id.astype(str).str.replace(r"\.0$", "", regex=True)
-        frame["transaction_date"] = pd.to_datetime(frame.transaction_date, errors="coerce").dt.normalize()
+        frame["transaction_date"] = parse_datetime(
+            frame.transaction_date, csv_source=path.suffix.casefold() == ".csv"
+        ).dt.normalize()
+        numeric_amount = parse_numeric(frame.amount)
+        valid_player_id = ~frame.player_id.str.strip().str.casefold().isin({"", "nan", "none", "null"})
         valid = (
-            frame.status.astype(str).str.strip().str.casefold().isin(self.config.successful_statuses)
+            valid_player_id
+            & frame.status.astype(str).str.strip().str.casefold().isin(self.config.successful_statuses)
             & frame.processed.astype(str).str.strip().str.casefold().eq("yes")
+            & frame.gateway.astype(str).str.strip().str.casefold().isin(self.config.allowed_gateways)
+            & ~frame.username.astype(str).str.contains("test", case=False, na=False)
             & frame.transaction_date.notna()
+            & numeric_amount.notna()
             & (frame.transaction_date.dt.date <= effective_end)
             & ~frame.transaction_date.dt.date.isin(self.config.excluded_dates)
         )
         issues = [{"source": "payments", "code": "REJECTED_PAYMENT_ROWS", "count": int((~valid).sum())}] if (~valid).any() else []
         frame = frame[valid].copy()
         frame["transaction_type"] = frame.transaction_type.astype(str).str.strip().str.casefold()
-        frame["amount"] = pd.to_numeric(frame.amount, errors="coerce").fillna(0)
+        frame["amount"] = numeric_amount[valid]
         return frame[["player_id", "username", "amount", "transaction_type", "transaction_date"]], issues
 
     def _read_payments_dataset(self, path: Path, effective_end: date) -> tuple[pd.DataFrame, list[dict]]:
         frame = pd.read_parquet(path)
-        required = {"user_id", "username", "amount", "transaction_type", "transaction_date"}
+        required = {"user_id", "username", "amount", "gateway", "transaction_type", "transaction_date"}
         missing = sorted(required - set(frame.columns))
         if missing:
             raise InputValidationError(
@@ -277,28 +308,35 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
             frame.transaction_date.notna()
             & (frame.transaction_date.dt.date <= effective_end)
             & ~frame.transaction_date.dt.date.isin(self.config.excluded_dates)
+            & frame.gateway.astype(str).str.strip().str.casefold().isin(self.config.allowed_gateways)
+            & ~frame.username.astype(str).str.contains("test", case=False, na=False)
         )
         issues = [{"source": "payment_dataset", "code": "OUT_OF_SCOPE_PAYMENT_ROWS", "count": int((~valid).sum())}] if (~valid).any() else []
         frame = frame[valid].copy()
-        frame["amount"] = pd.to_numeric(frame.amount, errors="coerce").fillna(0)
+        frame["amount"] = parse_numeric(frame.amount).fillna(0)
         return frame[["player_id", "username", "amount", "transaction_type", "transaction_date"]], issues
 
     def _read_bets(self, path: Path, effective_end: date) -> tuple[pd.DataFrame, list[dict]]:
         self._headers(path, self.config.bet_legs_worksheet, BET_LEGS_HEADERS)
-        frame = pd.read_excel(path, sheet_name=self.config.bet_legs_worksheet)
+        frame = read_table(path, sheet_name=self.config.bet_legs_worksheet)
         frame = frame.rename(columns={"Slip #": "bet_id", "User #": "player_id", "User Name": "username", "Issue Time": "bet_date", "Slip State": "slip_state", "Bet Status": "bet_status", "Game": "game", "Stake": "stake"})
         frame["player_id"] = frame.player_id.astype(str).str.replace(r"\.0$", "", regex=True)
-        frame["bet_date"] = pd.to_datetime(frame.bet_date, errors="coerce")
+        frame["bet_date"] = parse_datetime(
+            frame.bet_date, csv_source=path.suffix.casefold() == ".csv"
+        )
+        numeric_stake = parse_numeric(frame.stake)
         valid = (
             frame.bet_status.astype(str).str.strip().str.casefold().isin(self.config.settled_bet_statuses)
-            & frame.player_id.ne("")
+            & ~frame.player_id.str.strip().str.casefold().isin({"", "nan", "none", "null"})
+            & ~frame.username.astype(str).str.contains("test", case=False, na=False)
             & frame.bet_date.notna()
+            & numeric_stake.notna()
             & (frame.bet_date.dt.date <= effective_end)
             & ~frame.bet_date.dt.date.isin(self.config.excluded_dates)
         )
         issues = [{"source": "bet_legs", "code": "UNSETTLED_OR_CANCELLED_LEGS_EXCLUDED", "count": int((~valid).sum())}]
         frame = frame[valid].copy()
-        frame["stake"] = pd.to_numeric(frame.stake, errors="coerce").fillna(0).abs()
+        frame["stake"] = numeric_stake[valid].abs()
         # A sportsbook combination produces multiple leg rows for one slip. Player activity,
         # stake and playing-day measures operate at unique-slip grain.
         frame = (
@@ -356,7 +394,7 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         return master
 
     def _calculate(self, master: pd.DataFrame, bets: pd.DataFrame, report_date: date, start: date, period_end: date) -> dict[str, Any]:
-        end = period_end - timedelta(days=1)
+        end = period_end
         valid = master[~master.excluded]
         segments = master.activity_segment.value_counts().to_dict()
         labels = {
@@ -454,7 +492,10 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
                 "report_date": report_date.strftime("%d %B %Y"),
                 "period_start": start.strftime("%d %B %Y"),
                 "period_end": end.strftime("%d %B %Y"),
-                "excluded_date": period_end.strftime("%d %B %Y"),
+                "excluded_dates": [
+                    value.strftime("%d %B %Y")
+                    for value in sorted(self.config.excluded_dates)
+                ],
             },
             "kpis": kpis,
             "segments": segment_rows,

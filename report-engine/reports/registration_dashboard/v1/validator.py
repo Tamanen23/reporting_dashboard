@@ -8,6 +8,7 @@ import pandas as pd
 from openpyxl import load_workbook
 
 from core.exceptions import InputValidationError
+from core.tabular import parse_datetime, read_table
 
 from .config import COLUMN_ALIASES, REQUIRED_FIELDS, RegistrationConfig
 from .schemas import ValidationRecord
@@ -49,32 +50,45 @@ class RegistrationWorkbookValidator:
                 code="INPUT_FILE_NOT_FOUND",
                 context={"path": str(workbook_path)},
             )
-        if workbook_path.suffix.casefold() != ".xlsx":
+        if workbook_path.suffix.casefold() not in {".xlsx", ".csv"}:
             raise InputValidationError(
-                "The User List input must be an XLSX workbook.",
+                "The User List input must be an XLSX workbook or CSV file.",
                 code="INVALID_INPUT_EXTENSION",
             )
         if workbook_path.stat().st_size == 0:
             raise InputValidationError("The User List workbook is empty.", code="EMPTY_INPUT_FILE")
 
-        workbook = load_workbook(workbook_path, read_only=True, data_only=False)
-        worksheet_name = self.config.worksheet or workbook.sheetnames[0]
-        if worksheet_name not in workbook.sheetnames:
-            raise InputValidationError(
-                f"Worksheet '{worksheet_name}' was not found.",
-                code="WORKSHEET_NOT_FOUND",
-                context={"available_worksheets": workbook.sheetnames},
-            )
-        sheet = workbook[worksheet_name]
-        rows = sheet.iter_rows(values_only=False)
-        try:
-            header_cells = next(rows)
-        except StopIteration as exc:
-            raise InputValidationError(
-                "The workbook contains no rows.", code="EMPTY_WORKSHEET"
-            ) from exc
+        workbook = None
+        formula_rows: set[int] = set()
+        records: list[dict[str, Any]] = []
+        if workbook_path.suffix.casefold() == ".csv":
+            worksheet_name = "CSV"
+            source_frame = read_table(workbook_path)
+            raw_headers = [_normalise_text(value) for value in source_frame.columns]
+            for source_row_number, values in enumerate(source_frame.to_dict("records"), start=2):
+                row = {header: values.get(header) for header in raw_headers}
+                if any(value not in (None, "") for value in row.values()):
+                    row["_source_row_number"] = source_row_number
+                    records.append(row)
+        else:
+            workbook = load_workbook(workbook_path, read_only=True, data_only=False)
+            worksheet_name = self.config.worksheet or workbook.sheetnames[0]
+            if worksheet_name not in workbook.sheetnames:
+                raise InputValidationError(
+                    f"Worksheet '{worksheet_name}' was not found.",
+                    code="WORKSHEET_NOT_FOUND",
+                    context={"available_worksheets": workbook.sheetnames},
+                )
+            sheet = workbook[worksheet_name]
+            rows = sheet.iter_rows(values_only=False)
+            try:
+                header_cells = next(rows)
+            except StopIteration as exc:
+                raise InputValidationError(
+                    "The workbook contains no rows.", code="EMPTY_WORKSHEET"
+                ) from exc
+            raw_headers = [_normalise_text(cell.value) for cell in header_cells]
 
-        raw_headers = [_normalise_text(cell.value) for cell in header_cells]
         normalised_headers = [_normalise_header(header) for header in raw_headers]
         duplicates = sorted(
             {
@@ -99,24 +113,23 @@ class RegistrationWorkbookValidator:
                 context={"missing_columns": missing, "observed_columns": raw_headers},
             )
 
-        records: list[dict[str, Any]] = []
-        formula_rows: set[int] = set()
-        for source_row_number, cells in enumerate(rows, start=2):
-            row = {
-                raw_headers[index]: cell.value
-                for index, cell in enumerate(cells)
-                if index < len(raw_headers)
-            }
-            if not any(value not in (None, "") for value in row.values()):
-                continue
-            for source in source_columns.values():
-                index = raw_headers.index(source)
-                if index < len(cells) and cells[index].data_type == "f":
-                    formula_rows.add(source_row_number)
-                    row[source] = None
-            row["_source_row_number"] = source_row_number
-            records.append(row)
-        workbook.close()
+        if workbook is not None:
+            for source_row_number, cells in enumerate(rows, start=2):
+                row = {
+                    raw_headers[index]: cell.value
+                    for index, cell in enumerate(cells)
+                    if index < len(raw_headers)
+                }
+                if not any(value not in (None, "") for value in row.values()):
+                    continue
+                for source in source_columns.values():
+                    index = raw_headers.index(source)
+                    if index < len(cells) and cells[index].data_type == "f":
+                        formula_rows.add(source_row_number)
+                        row[source] = None
+                row["_source_row_number"] = source_row_number
+                records.append(row)
+            workbook.close()
 
         if not records:
             raise InputValidationError("The raw worksheet has no data rows.", code="EMPTY_DATASET")
@@ -169,8 +182,9 @@ class RegistrationWorkbookValidator:
                     )
                 )
                 continue
-            parsed_date = pd.to_datetime(
-                cast(Any, canonical_row.get("registration_date")), errors="coerce"
+            parsed_date = parse_datetime(
+                cast(Any, canonical_row.get("registration_date")),
+                csv_source=workbook_path.suffix.casefold() == ".csv",
             )
             if pd.isna(parsed_date):
                 issues.append(
@@ -231,21 +245,24 @@ class RegistrationWorkbookValidator:
                     in self.config.disabled_values,
                     "is_deleted": _normalise_flag(canonical_row.get("deleted_status"))
                     in self.config.deleted_values,
-                    "last_deposit_date": pd.to_datetime(
-                        cast(Any, canonical_row.get("last_deposit_date")), errors="coerce"
+                    "last_deposit_date": parse_datetime(
+                        cast(Any, canonical_row.get("last_deposit_date")),
+                        csv_source=workbook_path.suffix.casefold() == ".csv",
                     ),
                     "email": _normalise_text(canonical_row.get("email")),
                     "mobile_number": _normalise_text(canonical_row.get("mobile_number")),
                     "country": _normalise_text(canonical_row.get("country")),
                     "currency": _normalise_text(canonical_row.get("currency")),
                     "auth_type": _normalise_text(canonical_row.get("auth_type")),
-                    "date_of_birth": pd.to_datetime(
-                        cast(Any, canonical_row.get("date_of_birth")), errors="coerce"
+                    "date_of_birth": parse_datetime(
+                        cast(Any, canonical_row.get("date_of_birth")),
+                        csv_source=workbook_path.suffix.casefold() == ".csv",
                     ),
                     "tags": _normalise_text(canonical_row.get("tags")),
                     "extra_data": _normalise_text(canonical_row.get("extra_data")),
-                    "last_login": pd.to_datetime(
-                        cast(Any, canonical_row.get("last_login")), errors="coerce"
+                    "last_login": parse_datetime(
+                        cast(Any, canonical_row.get("last_login")),
+                        csv_source=workbook_path.suffix.casefold() == ".csv",
                     ),
                     "balance": canonical_row.get("balance"),
                     "promo_balance": canonical_row.get("promo_balance"),

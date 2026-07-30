@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -16,10 +16,11 @@ from pypdf import PdfReader
 
 from core.contracts import BaseReport
 from core.exceptions import InputValidationError
+from core.tabular import parse_datetime, parse_numeric, read_table
 
 from .config import PaymentsConfig
 
-VERSION = "1.0.0-provisional.1"
+VERSION = "1.0.0-provisional.4"
 EXPECTED_HEADERS = [
     "Username", "User ID", "Tags", "Currency", "Amount", "Net deposit amount",
     "Gateway", "Gateway information", "Processed", "Type", "Created at",
@@ -47,17 +48,22 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
             (work_directory / name).mkdir(parents=True, exist_ok=True)
 
         frame, bonus, validation, source = self._read(workbook_path)
-        effective_period_end = reporting_period_end - timedelta(days=1)
         frame["included_in_reporting_period"] = (
             frame["transaction_date"].between(
-                pd.Timestamp(reporting_period_start), pd.Timestamp(effective_period_end)
+                pd.Timestamp(reporting_period_start), pd.Timestamp(reporting_period_end)
             )
             & ~frame["transaction_date"].dt.date.isin(self.config.excluded_dates)
         )
         dataset_path = work_directory / "prepared" / "payment-transactions.parquet"
         frame.to_parquet(dataset_path, index=False)
         bonus_path = work_directory / "prepared" / "bonus-summary.parquet"
-        pd.DataFrame(bonus["rows"]).to_parquet(bonus_path, index=False)
+        pd.DataFrame(
+            bonus["rows"],
+            columns=[
+                "wallet_type", "credited_amount", "converted_amount",
+                "credited_count", "converted_count",
+            ],
+        ).to_parquet(bonus_path, index=False)
         validation_path = work_directory / "prepared" / "validation-log.json"
         validation_path.write_text(json.dumps(validation, indent=2), encoding="utf-8")
 
@@ -117,6 +123,9 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "summary_scope": self.config.summary_scope,
                 "successful_statuses": sorted(self.config.successful_statuses),
                 "processed_values": sorted(self.config.processed_values),
+                "allowed_gateways": sorted(self.config.allowed_gateways),
+                "exclude_test_usernames": True,
+                "date_normalization": "Processed Date is parsed and normalized to calendar date.",
                 "published_deposit_adjustment_xaf": str(
                     self.config.published_deposit_adjustment_xaf
                 ),
@@ -150,15 +159,25 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         return artifacts
 
     def _read(self, path: Path) -> tuple[pd.DataFrame, dict[str, Any], dict, dict]:
-        workbook = load_workbook(path, read_only=True, data_only=False)
-        if self.config.transaction_worksheet not in workbook.sheetnames:
-            raise InputValidationError(
-                f"Required worksheet '{self.config.transaction_worksheet}' was not found.",
-                code="PAYMENT_WORKSHEET_MISSING",
-            )
-        worksheet = workbook[self.config.transaction_worksheet]
-        headers = [cell.value for cell in next(worksheet.iter_rows(min_row=1, max_row=1))]
-        if headers != EXPECTED_HEADERS:
+        workbook = None
+        if path.suffix.casefold() == ".csv":
+            raw_frame = read_table(path)
+            raw_frame = raw_frame.rename(columns={"Processed at": "Processed Date"})
+            headers = [str(value).strip() for value in raw_frame.columns]
+            rows = list(raw_frame.itertuples(index=False, name=None))
+            worksheet_name = "CSV"
+        else:
+            workbook = load_workbook(path, read_only=True, data_only=False)
+            if self.config.transaction_worksheet not in workbook.sheetnames:
+                raise InputValidationError(
+                    f"Required worksheet '{self.config.transaction_worksheet}' was not found.",
+                    code="PAYMENT_WORKSHEET_MISSING",
+                )
+            worksheet = workbook[self.config.transaction_worksheet]
+            headers = [cell.value for cell in next(worksheet.iter_rows(min_row=1, max_row=1))]
+            rows = worksheet.iter_rows(min_row=2, values_only=True)
+            worksheet_name = self.config.transaction_worksheet
+        if any(header not in headers for header in EXPECTED_HEADERS):
             missing = [header for header in EXPECTED_HEADERS if header not in headers]
             raise InputValidationError(
                 "The payment workbook structure does not match the production export.",
@@ -168,60 +187,85 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         records: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
         for row_number, values in enumerate(
-            worksheet.iter_rows(min_row=2, values_only=True), start=2
+            rows, start=2
         ):
             row = dict(zip(headers, values, strict=False))
             user_id = str(row["User ID"] or "").strip()
             if not user_id:
                 rejected.append({"row": row_number, "code": "BLANK_USER_ID"})
                 continue
+            username = str(row["Username"] or "").strip()
+            if "test" in username.casefold():
+                rejected.append({"row": row_number, "code": "TEST_ACCOUNT"})
+                continue
             status = str(row["Status"] or "").strip().casefold()
             processed = str(row["Processed"] or "").strip().casefold()
-            if status not in self.config.successful_statuses or processed not in self.config.processed_values:
-                rejected.append({"row": row_number, "code": "NOT_SUCCESSFUL"})
+            if status not in self.config.successful_statuses:
+                rejected.append({"row": row_number, "code": "STATUS_NOT_APPROVED"})
+                continue
+            if processed not in self.config.processed_values:
+                rejected.append({"row": row_number, "code": "NOT_PROCESSED"})
+                continue
+            gateway = str(row["Gateway"] or "").strip()
+            if gateway.casefold() not in self.config.allowed_gateways:
+                rejected.append({"row": row_number, "code": "GATEWAY_NOT_ALLOWED"})
                 continue
             transaction_type = str(row["Type"] or "").strip().casefold()
             if transaction_type not in {"deposit", "withdrawal"}:
                 rejected.append({"row": row_number, "code": "UNKNOWN_TYPE"})
                 continue
             try:
-                amount = Decimal(str(row["Amount"] or "0"))
-                transaction_date = pd.Timestamp(row["Processed Date"]).normalize()
+                parsed_amount = parse_numeric(row["Amount"])
+                if pd.isna(parsed_amount):
+                    raise ValueError("Amount is not numeric.")
+                amount = Decimal(str(parsed_amount))
+                transaction_date = parse_datetime(
+                    row["Processed Date"], csv_source=path.suffix.casefold() == ".csv"
+                ).normalize()
             except (ArithmeticError, TypeError, ValueError):
                 rejected.append({"row": row_number, "code": "INVALID_VALUE"})
                 continue
+            if pd.isna(transaction_date):
+                rejected.append({"row": row_number, "code": "INVALID_TRANSACTION_DATE"})
+                continue
             records.append({
                 "source_row": row_number,
-                "username": str(row["Username"] or "").strip(),
+                "username": username,
                 "user_id": user_id,
                 "currency": str(row["Currency"] or "").strip(),
                 "amount": float(amount),
-                "gateway": str(row["Gateway"] or "").strip(),
+                "gateway": {"momomtn": "MomoMTN", "airtel": "Airtel", "retail": "Retail"}[gateway.casefold()],
                 "transaction_type": transaction_type,
                 "transaction_date": transaction_date,
                 "status": str(row["Status"] or "").strip(),
                 "processed": str(row["Processed"] or "").strip(),
             })
-        workbook.close()
+        if workbook is not None:
+            workbook.close()
         if not records:
             raise InputValidationError(
                 "No valid payment transactions were found.", code="NO_VALID_PAYMENTS"
             )
         frame = pd.DataFrame(records)
-        bonus = self._read_bonus(path)
+        bonus = self._unavailable_bonus() if path.suffix.casefold() == ".csv" else self._read_bonus(path)
         validation = {
-            "worksheet": self.config.transaction_worksheet,
-            "source_rows": worksheet.max_row - 1,
+            "worksheet": worksheet_name,
+            "source_rows": len(records) + len(rejected),
             "accepted_rows": len(frame),
             "rejected_rows": len(rejected),
             "issues": rejected,
             "warnings": [
-                "Bonus data is aggregate-only on Sheet1; transaction-level bonus reconciliation is unavailable."
+                (
+                    "Bonus KPIs are unavailable because the CSV transaction export has no "
+                    "credited-to-real bonus summary."
+                    if path.suffix.casefold() == ".csv"
+                    else "Bonus data is aggregate-only on Sheet1; transaction-level bonus reconciliation is unavailable."
+                )
             ],
         }
         source = {
-            "transaction_worksheet": self.config.transaction_worksheet,
-            "bonus_worksheet": self.config.aggregate_worksheet,
+            "transaction_worksheet": worksheet_name,
+            "bonus_worksheet": None if path.suffix.casefold() == ".csv" else self.config.aggregate_worksheet,
             "header_row": 1,
             "column_mapping": {
                 "username": "Username", "player_id": "User ID", "currency": "Currency",
@@ -229,7 +273,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "transaction_type": "Type", "transaction_date": "Processed Date",
                 "status": "Status",
             },
-            "bonus_mapping": {
+            "bonus_mapping": None if path.suffix.casefold() == ".csv" else {
                 "wallet_type": "S", "currency": "T", "credited_amount": "U",
                 "converted_amount": "V", "credited_count": "W", "converted_count": "X",
             },
@@ -257,12 +301,28 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "converted_count": int(sheet.cell(row_number, 24).value or 0),
             })
         workbook.close()
+        return self._bonus_totals(rows)
+
+    @staticmethod
+    def _bonus_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
         return {
+            "available": True,
             "rows": rows,
             "credited_amount": sum(item["credited_amount"] for item in rows),
             "converted_amount": sum(item["converted_amount"] for item in rows),
             "credited_count": sum(item["credited_count"] for item in rows),
             "converted_count": sum(item["converted_count"] for item in rows),
+        }
+
+    @staticmethod
+    def _unavailable_bonus() -> dict[str, Any]:
+        return {
+            "available": False,
+            "rows": [],
+            "credited_amount": None,
+            "converted_amount": None,
+            "credited_count": None,
+            "converted_count": None,
         }
 
     def _calculate(
@@ -278,8 +338,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         withdrawal_amount = Decimal(str(withdrawals.amount.sum()))
         net_cash = deposit_amount - withdrawal_amount
 
-        effective_period_end = period_end - timedelta(days=1)
-        date_index = pd.date_range(period_start, effective_period_end, freq="D")
+        date_index = pd.date_range(period_start, period_end, freq="D")
         daily = []
         for timestamp in date_index:
             current = period[period.transaction_date == timestamp]
@@ -316,7 +375,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         highest_withdrawal = max(daily, key=lambda item: item["withdrawal_amount"])
         conversion = (
             Decimal(str(bonus["converted_amount"])) / Decimal(str(bonus["credited_amount"])) * 100
-            if bonus["credited_amount"] else Decimal(0)
+            if bonus["available"] and bonus["credited_amount"] else Decimal(0)
         )
         ratio = deposit_amount / withdrawal_amount if withdrawal_amount else Decimal(0)
         last_dep = sum(Decimal(str(item["deposit_amount"])) for item in last_ten)
@@ -375,12 +434,6 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "actual": float(net_cash), "difference": 0, "passed": True,
             },
             {
-                "name": "bonus_aggregate",
-                "expected": float(bonus["credited_amount"]),
-                "actual": float(sum(row["credited_amount"] for row in bonus["rows"])),
-                "difference": 0, "passed": True,
-            },
-            {
                 "name": "last_ten_deposit_summary_matches_chart",
                 "expected": float(sum(Decimal(str(item["deposit_amount"])) for item in last_ten)),
                 "actual": float(last_dep), "difference": 0, "passed": True,
@@ -391,6 +444,13 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "actual": float(last_wit), "difference": 0, "passed": True,
             },
         ]
+        if bonus["available"]:
+            reconciliation.append({
+                "name": "bonus_aggregate",
+                "expected": float(bonus["credited_amount"]),
+                "actual": float(sum(row["credited_amount"] for row in bonus["rows"])),
+                "difference": 0, "passed": True,
+            })
         reconciliation.extend(
             {
                 "name": "production_reference_" + item["metric"].casefold()
@@ -407,7 +467,11 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         )
         warnings = [
             "PROVISIONAL: summary cards use the full workbook snapshot while the trend uses the selected reporting period.",
-            "Bonus KPIs come from the aggregate bonus table on Sheet1; no row-level bonus transactions are available.",
+            (
+                "Bonus KPIs come from the aggregate bonus table on Sheet1; no row-level bonus transactions are available."
+                if bonus["available"]
+                else "Bonus KPIs are unavailable from the supplied CSV transaction export."
+            ),
         ]
         warnings.extend(
             f"REVIEW REQUIRED: {item['metric']}: {item['message']}"
@@ -415,10 +479,10 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         )
         return {
             "report_code": "deposits_withdrawals_bonus_dashboard",
-            "report_date": effective_period_end.isoformat(),
+            "report_date": report_date.isoformat(),
             "period_start": period_start.isoformat(),
-            "period_end": effective_period_end.isoformat(),
-            "excluded_date": period_end.isoformat(),
+            "period_end": period_end.isoformat(),
+            "excluded_dates": sorted(value.isoformat() for value in self.config.excluded_dates),
             "summary": {
                 "deposit_count": len(deposits), "deposit_amount": float(deposit_amount),
                 "source_deposit_amount": float(source_deposit_amount),
@@ -431,7 +495,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "retail_deposit_count": len(deposits[deposits.gateway == "Retail"]),
                 "retail_deposit_amount": float(deposits[deposits.gateway == "Retail"].amount.sum()),
                 "deposit_withdrawal_ratio": float(ratio),
-                "bonus_conversion_rate": float(conversion),
+                "bonus_conversion_rate": float(conversion) if bonus["available"] else None,
             },
             "daily": daily, "last_ten": last_ten,
             "last_ten_summary": {
@@ -446,8 +510,14 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 f"Total deposits amounted to XAF {deposit_amount:,.0f} across {len(deposits):,} successful transactions.",
                 f"Total withdrawals amounted to XAF {withdrawal_amount:,.0f} across {len(withdrawals):,} transactions.",
                 f"Net cash flow for the reporting snapshot is {'positive' if net_cash >= 0 else 'negative'} at XAF {net_cash:,.0f}.",
-                f"Players were credited XAF {bonus['credited_amount']:,.0f} in bonuses across {bonus['credited_count']:,} transactions.",
-                f"XAF {bonus['converted_amount']:,.0f} of bonus was converted to real balance ({conversion:.1f}% conversion rate).",
+                *(
+                    [
+                        f"Players were credited XAF {bonus['credited_amount']:,.0f} in bonuses across {bonus['credited_count']:,} transactions.",
+                        f"XAF {bonus['converted_amount']:,.0f} of bonus was converted to real balance ({conversion:.1f}% conversion rate).",
+                    ]
+                    if bonus["available"]
+                    else ["Bonus KPIs are unavailable because they are not present in the CSV transaction export."]
+                ),
                 f"Retail deposits contributed XAF {deposits[deposits.gateway == 'Retail'].amount.sum():,.0f} across {len(deposits[deposits.gateway == 'Retail']):,} manually processed transactions.",
                 f"Deposit activity peaked on {date.fromisoformat(highest_deposit['date']).strftime('%d %B %Y')} with XAF {highest_deposit['deposit_amount']:,.0f}.",
                 f"Withdrawal activity peaked on {date.fromisoformat(highest_withdrawal['date']).strftime('%d %B %Y')} with XAF {highest_withdrawal['withdrawal_amount']:,.0f}.",
@@ -528,10 +598,15 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         for expected in (
             f"{results['summary']['deposit_amount']:,.0f}",
             f"{results['summary']['withdrawal_amount']:,.0f}",
-            f"{results['summary']['bonus_credited_amount']:,.0f}",
         ):
             if expected not in contents:
                 raise RuntimeError(f"Expected value {expected} is absent from dashboard HTML.")
+        if results["bonus"]["available"]:
+            expected_bonus = f"{results['summary']['bonus_credited_amount']:,.0f}"
+            if expected_bonus not in contents:
+                raise RuntimeError(f"Expected value {expected_bonus} is absent from dashboard HTML.")
+        elif "UNAVAILABLE" not in contents:
+            raise RuntimeError("Unavailable CSV bonus status is absent from dashboard HTML.")
         if len(PdfReader(pdf).pages) != 1:
             raise RuntimeError("Dashboard PDF must contain exactly one page.")
         with Image.open(png) as image:

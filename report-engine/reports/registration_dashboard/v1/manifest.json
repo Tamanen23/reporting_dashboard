@@ -42,7 +42,7 @@
     "manifest.json"
   ],
   "configuration": {
-    "include_report_date": {"default": false, "provisional": true},
+    "include_report_date": {"default": true, "provisional": false},
     "completed_registration_values": {"default": ["completed", "complete", "verified", "yes", "true", "1"], "provisional": true},
     "duplicate_player_id_rule": {"default": "reject_generation", "allowed": ["reject_generation", "keep_first", "keep_latest"], "provisional": true},
     "pending_validation_definition": {"default": "registration_not_completed", "allowed": ["registration_not_completed", "configured_account_status"], "provisional": true},

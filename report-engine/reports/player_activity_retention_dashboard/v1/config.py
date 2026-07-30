@@ -12,6 +12,7 @@ class PlayerActivityConfig:
     dormancy_days: int = 30
     completed_values: frozenset[str] = frozenset({"yes", "completed", "verified", "true", "1"})
     successful_statuses: frozenset[str] = frozenset({"completed [approved]"})
+    allowed_gateways: frozenset[str] = frozenset({"momomtn", "airtel", "retail"})
     excluded_dates: frozenset[date] = frozenset()
     exclude_disabled_accounts: bool = True
     exclude_deleted_accounts: bool = True

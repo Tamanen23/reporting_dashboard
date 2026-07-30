@@ -78,6 +78,7 @@ final class ReportGenerationController extends Controller
                 'label' => $input->label,
                 'description' => $input->description,
                 'extensions' => $input->accepted_extensions,
+                'required' => $input->is_required,
             ])->values(),
         ])->values();
 
@@ -185,18 +186,16 @@ final class ReportGenerationController extends Controller
         if ($definition->code === 'overall_performance_dashboard') {
             return $this->storeOverallPerformance($request, $definition);
         }
-        if ($definition->code === 'player_activity_retention_dashboard') {
-            return $this->storePlayerActivity($request, $definition, $inspector);
+        if (in_array($definition->code, ['deposits_withdrawals_bonus_dashboard', 'player_activity_retention_dashboard'], true)) {
+            return $this->storeMultiInputReport($request, $definition, $inspector);
         }
 
         $inputKey = match ($definition->code) {
             'registration_dashboard' => 'user_list',
-            'deposits_withdrawals_bonus_dashboard' => 'payment_transactions',
             'cash_operations_dashboard' => 'cash_operations',
         };
         $inputLabel = match ($definition->code) {
             'registration_dashboard' => 'User List Report',
-            'deposits_withdrawals_bonus_dashboard' => 'Deposits & Withdrawals workbook',
             'cash_operations_dashboard' => 'Cash Operations workbook',
         };
         $input = $definition->inputs->firstWhere('input_key', $inputKey);
@@ -204,8 +203,9 @@ final class ReportGenerationController extends Controller
         if ($input === null || $upload === null) {
             throw ValidationException::withMessages(["inputs.{$inputKey}" => "The {$inputLabel} is required."]);
         }
-        if (! in_array(mb_strtolower($upload->getClientOriginalExtension()), $input->accepted_extensions, true)) {
-            throw ValidationException::withMessages(["inputs.{$inputKey}" => "The {$inputLabel} must be an XLSX workbook."]);
+        $extension = mb_strtolower($upload->getClientOriginalExtension());
+        if (! in_array($extension, $input->accepted_extensions, true)) {
+            throw ValidationException::withMessages(["inputs.{$inputKey}" => "The {$inputLabel} must be an XLSX workbook or CSV file."]);
         }
         try {
             $structure = $inspector->inspect(
@@ -213,6 +213,7 @@ final class ReportGenerationController extends Controller
                 $input->required_columns,
                 $input->validation_rules['worksheet'] ?? null,
                 $definition->code,
+                $extension,
             );
         } catch (WorkbookStructureException $exception) {
             $details = $exception->context['missing_columns'] ?? [];
@@ -252,14 +253,14 @@ final class ReportGenerationController extends Controller
         $uuid = (string) Str::uuid();
         $period = $request->date('reporting_period_start')->format('Y-m-d');
         $directory = "reports/{$definition->code}/{$period}/{$uuid}";
-        $storedFilename = Str::uuid().'.xlsx';
+        $storedFilename = Str::uuid().'.'.$extension;
         $storedPath = $upload->storeAs("{$directory}/inputs/raw", $storedFilename, 'local');
         if (! $storedPath) {
             throw ValidationException::withMessages(["inputs.{$inputKey}" => 'The workbook could not be stored safely.']);
         }
 
         try {
-            $generation = DB::transaction(function () use ($request, $definition, $input, $inputKey, $inputLabel, $upload, $uuid, $storedFilename, $storedPath, $checksum, $fingerprint, $excludedDates, $structure): ReportGeneration {
+            $generation = DB::transaction(function () use ($request, $definition, $input, $inputKey, $inputLabel, $upload, $uuid, $storedFilename, $storedPath, $checksum, $fingerprint, $excludedDates, $structure, $extension): ReportGeneration {
                 $generation = ReportGeneration::query()->create([
                     'uuid' => $uuid,
                     'report_definition_id' => $definition->id,
@@ -293,8 +294,8 @@ final class ReportGenerationController extends Controller
                     'stored_filename' => $storedFilename,
                     'storage_disk' => 'local',
                     'stored_path' => $storedPath,
-                    'mime_type' => $upload->getMimeType() ?: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    'extension' => 'xlsx',
+                    'mime_type' => $upload->getMimeType() ?: ($extension === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+                    'extension' => $extension,
                     'size_bytes' => $upload->getSize(),
                     'sha256_checksum' => $checksum,
                     'column_count' => count($structure['headers']),
@@ -329,23 +330,28 @@ final class ReportGenerationController extends Controller
         return view('reports.show', ['generation' => $report]);
     }
 
-    private function storePlayerActivity(StoreReportGenerationRequest $request, ReportDefinition $definition, XlsxHeaderInspector $inspector): RedirectResponse
+    private function storeMultiInputReport(StoreReportGenerationRequest $request, ReportDefinition $definition, XlsxHeaderInspector $inspector): RedirectResponse
     {
         $validatedInputs = [];
         foreach ($definition->inputs->sortBy('display_order') as $input) {
             $upload = $request->file("inputs.{$input->input_key}");
             if ($upload === null) {
-                throw ValidationException::withMessages(["inputs.{$input->input_key}" => "The {$input->label} is required."]);
+                if ($input->is_required) {
+                    throw ValidationException::withMessages(["inputs.{$input->input_key}" => "The {$input->label} is required."]);
+                }
+                continue;
             }
-            if (! in_array(mb_strtolower($upload->getClientOriginalExtension()), $input->accepted_extensions, true)) {
-                throw ValidationException::withMessages(["inputs.{$input->input_key}" => "The {$input->label} must be an XLSX workbook."]);
+            $extension = mb_strtolower($upload->getClientOriginalExtension());
+            if (! in_array($extension, $input->accepted_extensions, true)) {
+                throw ValidationException::withMessages(["inputs.{$input->input_key}" => "The {$input->label} has an unsupported file format."]);
             }
             try {
                 $structure = $inspector->inspect(
                     $upload->getRealPath(),
                     $input->required_columns,
                     $input->validation_rules['worksheet'] ?? null,
-                    $definition->code,
+                    $input->validation_rules['profile'] ?? $definition->code,
+                    $extension,
                 );
             } catch (WorkbookStructureException $exception) {
                 $missing = $exception->context['missing_columns'] ?? [];
@@ -357,12 +363,14 @@ final class ReportGenerationController extends Controller
                 'upload' => $upload,
                 'structure' => $structure,
                 'checksum' => hash_file('sha256', $upload->getRealPath()),
+                'extension' => $extension,
             ];
         }
 
         $excludedDates = collect($request->validated('excluded_dates', []))
             ->filter(fn (mixed $value): bool => filled($value))->sort()->values()->all();
-        $rules = $definition->configuration['player_activity_rules'] ?? [];
+        $rulesKey = $definition->code === 'deposits_withdrawals_bonus_dashboard' ? 'payment_rules' : 'player_activity_rules';
+        $rules = $definition->configuration[$rulesKey] ?? [];
         $fingerprint = hash('sha256', json_encode([
             'report_code' => $definition->code,
             'report_date' => $request->date('report_date')->format('Y-m-d'),
@@ -373,7 +381,7 @@ final class ReportGenerationController extends Controller
             'definition_version' => $definition->definition_version,
             'calculation_version' => $definition->calculation_version,
             'template_version' => $definition->template_version,
-            'player_activity_rules' => $rules,
+            $rulesKey => $rules,
         ], JSON_THROW_ON_ERROR));
         $duplicate = ReportGeneration::query()
             ->where('user_id', $request->user()->id)->where('input_fingerprint', $fingerprint)->latest()->first();
@@ -387,7 +395,7 @@ final class ReportGenerationController extends Controller
         $storedPaths = [];
         try {
             foreach ($validatedInputs as $key => &$item) {
-                $filename = Str::uuid().'.xlsx';
+                $filename = Str::uuid().'.'.$item['extension'];
                 $path = $item['upload']->storeAs("{$directory}/inputs/raw", $filename, 'local');
                 if (! $path) {
                     throw ValidationException::withMessages(["inputs.{$key}" => 'The workbook could not be stored safely.']);
@@ -398,7 +406,7 @@ final class ReportGenerationController extends Controller
             }
             unset($item);
 
-            $generation = DB::transaction(function () use ($request, $definition, $validatedInputs, $uuid, $fingerprint, $excludedDates, $rules): ReportGeneration {
+            $generation = DB::transaction(function () use ($request, $definition, $validatedInputs, $uuid, $fingerprint, $excludedDates, $rules, $rulesKey): ReportGeneration {
                 $generation = ReportGeneration::query()->create([
                     'uuid' => $uuid,
                     'report_definition_id' => $definition->id,
@@ -416,7 +424,7 @@ final class ReportGenerationController extends Controller
                     'engine_version' => '0.1.0',
                     'input_fingerprint' => $fingerprint,
                     'processing_metadata' => [
-                        'reporting_context' => ['excluded_dates' => $excludedDates, 'player_activity_rules' => $rules],
+                        'reporting_context' => ['excluded_dates' => $excludedDates, $rulesKey => $rules],
                         'structures' => collect($validatedInputs)->map(fn (array $item) => $item['structure'])->all(),
                     ],
                     'last_progress_at' => now(),
@@ -431,8 +439,8 @@ final class ReportGenerationController extends Controller
                         'stored_filename' => $item['stored_filename'],
                         'storage_disk' => 'local',
                         'stored_path' => $item['stored_path'],
-                        'mime_type' => $upload->getMimeType() ?: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        'extension' => 'xlsx',
+                        'mime_type' => $upload->getMimeType() ?: ($item['extension'] === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+                        'extension' => $item['extension'],
                         'size_bytes' => $upload->getSize(),
                         'sha256_checksum' => $item['checksum'],
                         'column_count' => count($item['structure']['headers']),
@@ -443,7 +451,7 @@ final class ReportGenerationController extends Controller
                     'stage' => ProcessingStage::FileStorage,
                     'level' => EventLevel::Info,
                     'event_code' => 'UPLOADS_STORED',
-                    'message' => 'The three Player Activity source workbooks were stored and structurally validated.',
+                    'message' => 'The source files were stored and structurally validated.',
                     'context' => ['input_keys' => array_keys($validatedInputs)],
                     'occurred_at' => now(),
                 ]);

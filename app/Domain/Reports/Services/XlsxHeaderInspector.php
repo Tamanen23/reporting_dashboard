@@ -13,7 +13,7 @@ final class XlsxHeaderInspector
     private const ALIASES = [
         'player_id' => ['player id', 'player_id', 'userid', 'user id', 'id'],
         'username' => ['username', 'user name', 'login', 'user'],
-        'registration_date' => ['registration date', 'registered date', 'registration_date', 'created at', 'created date'],
+        'registration_date' => ['registration date', 'registered date', 'registered at', 'registration_date', 'created at', 'created date'],
         'registration_completed' => ['registration completed', 'registration completion', 'registration_completed', 'verification status', 'kyc status', 'reg finished'],
         'account_status' => ['account status', 'status', 'account_status'],
         'disabled_status' => ['disabled', 'disabled status', 'is disabled', 'disabled_status'],
@@ -29,7 +29,7 @@ final class XlsxHeaderInspector
         'gateway' => ['gateway'],
         'processed' => ['processed'],
         'transaction_type' => ['type'],
-        'transaction_date' => ['processed date'],
+        'transaction_date' => ['processed date', 'processed at'],
         'status' => ['status'],
     ];
 
@@ -53,6 +53,7 @@ final class XlsxHeaderInspector
         'disabled_status' => ['disabled'],
         'deleted_status' => ['deleted'],
         'amount' => ['amount'],
+        'gateway' => ['gateway'],
         'processed' => ['processed'],
         'transaction_type' => ['type'],
         'transaction_date' => ['processed date', 'date & time'],
@@ -66,8 +67,19 @@ final class XlsxHeaderInspector
         'stake' => ['stake'],
     ];
 
-    public function inspect(string $path, array $requiredCanonicalFields, ?string $expectedWorksheet = null, string $profile = 'registration_dashboard'): array
+    public function inspect(
+        string $path,
+        array $requiredCanonicalFields,
+        ?string $expectedWorksheet = null,
+        string $profile = 'registration_dashboard',
+        ?string $extension = null,
+    ): array
     {
+        $extension = mb_strtolower($extension ?: pathinfo($path, PATHINFO_EXTENSION));
+        if ($extension === 'csv') {
+            return $this->inspectCsv($path, $requiredCanonicalFields, $profile);
+        }
+
         $zip = new ZipArchive;
         if ($zip->open($path) !== true) {
             throw new WorkbookStructureException('The uploaded file is not a readable XLSX workbook.');
@@ -105,39 +117,88 @@ final class XlsxHeaderInspector
                 }
                 $headers[] = trim($value);
             }
-            $normalisedHeaders = array_map($this->normalise(...), $headers);
-            $duplicates = array_keys(array_filter(array_count_values($normalisedHeaders), fn (int $count, string $header): bool => $header !== '' && $count > 1, ARRAY_FILTER_USE_BOTH));
-            if ($duplicates !== []) {
-                throw new WorkbookStructureException('The workbook contains duplicate column headings.', ['columns' => $duplicates]);
-            }
-            $mapping = [];
-            $aliasesByCanonical = match ($profile) {
-                'deposits_withdrawals_bonus_dashboard' => self::PAYMENT_ALIASES,
-                'cash_operations_dashboard' => self::CASH_OPERATIONS_ALIASES,
-                'player_activity_retention_dashboard' => self::PLAYER_ACTIVITY_ALIASES,
-                default => self::ALIASES,
-            };
-            foreach ($aliasesByCanonical as $canonical => $aliases) {
-                foreach ($aliases as $alias) {
-                    $index = array_search($this->normalise($alias), $normalisedHeaders, true);
-                    if ($index !== false) {
-                        $mapping[$canonical] = $headers[$index];
-                        break;
-                    }
-                }
-            }
-            $missing = array_values(array_diff($requiredCanonicalFields, array_keys($mapping)));
-            if ($missing !== []) {
-                throw new WorkbookStructureException(
-                    'This workbook does not match the selected report.',
-                    ['missing_columns' => $missing, 'observed_columns' => $headers],
-                );
-            }
+            $mapping = $this->mapHeaders($headers, $requiredCanonicalFields, $profile);
 
-            return ['worksheet' => $worksheetName, 'headers' => $headers, 'mapping' => $mapping];
+            return ['format' => 'xlsx', 'worksheet' => $worksheetName, 'headers' => $headers, 'mapping' => $mapping];
         } finally {
             $zip->close();
         }
+    }
+
+    private function inspectCsv(string $path, array $requiredCanonicalFields, string $profile): array
+    {
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            throw new WorkbookStructureException('The uploaded CSV file is not readable.');
+        }
+
+        try {
+            $firstLine = fgets($handle);
+            if ($firstLine === false) {
+                throw new WorkbookStructureException('The CSV file is empty.');
+            }
+            $delimiter = collect([',', ';', "\t", '|'])
+                ->sortByDesc(fn (string $candidate): int => substr_count($firstLine, $candidate))
+                ->first() ?? ',';
+            rewind($handle);
+            $headers = fgetcsv($handle, 0, $delimiter);
+        } finally {
+            fclose($handle);
+        }
+
+        if (! is_array($headers) || $headers === []) {
+            throw new WorkbookStructureException('The CSV file does not contain a readable header row.');
+        }
+        $headers = array_map(
+            static fn (mixed $header): string => trim((string) preg_replace('/^\xEF\xBB\xBF/', '', (string) $header)),
+            $headers,
+        );
+
+        return [
+            'format' => 'csv',
+            'worksheet' => null,
+            'delimiter' => $delimiter,
+            'headers' => $headers,
+            'mapping' => $this->mapHeaders($headers, $requiredCanonicalFields, $profile),
+        ];
+    }
+
+    private function mapHeaders(array $headers, array $requiredCanonicalFields, string $profile): array
+    {
+        $normalisedHeaders = array_map($this->normalise(...), $headers);
+        $duplicates = array_keys(array_filter(
+            array_count_values($normalisedHeaders),
+            fn (int $count, string $header): bool => $header !== '' && $count > 1,
+            ARRAY_FILTER_USE_BOTH,
+        ));
+        if ($duplicates !== []) {
+            throw new WorkbookStructureException('The source file contains duplicate column headings.', ['columns' => $duplicates]);
+        }
+        $aliasesByCanonical = match ($profile) {
+            'deposits_withdrawals_bonus_dashboard' => self::PAYMENT_ALIASES,
+            'cash_operations_dashboard' => self::CASH_OPERATIONS_ALIASES,
+            'player_activity_retention_dashboard' => self::PLAYER_ACTIVITY_ALIASES,
+            default => self::ALIASES,
+        };
+        $mapping = [];
+        foreach ($aliasesByCanonical as $canonical => $aliases) {
+            foreach ($aliases as $alias) {
+                $index = array_search($this->normalise($alias), $normalisedHeaders, true);
+                if ($index !== false) {
+                    $mapping[$canonical] = $headers[$index];
+                    break;
+                }
+            }
+        }
+        $missing = array_values(array_diff($requiredCanonicalFields, array_keys($mapping)));
+        if ($missing !== []) {
+            throw new WorkbookStructureException(
+                'This source file does not match the selected report.',
+                ['missing_columns' => $missing, 'observed_columns' => $headers],
+            );
+        }
+
+        return $mapping;
     }
 
     private function sharedStrings(ZipArchive $zip): array

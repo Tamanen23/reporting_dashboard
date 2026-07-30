@@ -10,7 +10,7 @@ class RegistrationConfig:
 
     worksheet: str | None = "User List-28"
     timezone: str = "Indian/Mauritius"
-    include_report_date: bool = False  # PROVISIONAL
+    include_report_date: bool = True
     excluded_dates: frozenset[date] = field(default_factory=frozenset)
     completed_values: frozenset[str] = field(
         default_factory=lambda: frozenset({"completed", "complete", "verified", "yes", "true", "1"})
@@ -57,6 +57,7 @@ COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "registration_date": (
         "registration date",
         "registered date",
+        "registered at",
         "registration_date",
         "created at",
         "created date",

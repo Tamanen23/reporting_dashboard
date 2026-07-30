@@ -2,6 +2,7 @@ import json
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from openpyxl import Workbook
 
@@ -178,24 +179,23 @@ def test_pipeline_generates_exact_results_and_traceable_artifacts(tmp_path: Path
     assert result["rates"] == expected["rates"]
     assert result["averages"] == {
         "registrations_per_day": "1.00",
-        "completed_registrations_per_day": "0.50",
-        "registered_and_deposited_per_day": "0.50",
-        "average_ftd_per_day": "0.50",
+        "completed_registrations_per_day": "0.60",
+        "registered_and_deposited_per_day": "0.40",
+        "average_ftd_per_day": "0.40",
     }
     assert result["highest_registration_day"] == {"date": "2026-07-20", "value": 2}
     assert all(check["passed"] for check in result["reconciliation"])
-    assert result["last_ten_days_total"] == 4
+    assert result["last_ten_days_total"] == 5
     assert len(artifacts["registration_dataset"].read_bytes()) > 100
     issue_codes = {
         issue["reason_code"] for issue in json.loads(artifacts["validation_log"].read_text())
     }
     assert issue_codes == {
         "TEST_ACCOUNT",
-        "BLANK_PLAYER_ID",
-        "INVALID_REGISTRATION_DATE",
-        "DELETED_ACCOUNT",
-        "EXCLUDED_REPORTING_DATE",
-    }
+            "BLANK_PLAYER_ID",
+            "INVALID_REGISTRATION_DATE",
+            "DELETED_ACCOUNT",
+        }
     manifest = json.loads(artifacts["manifest"].read_text())
     assert manifest["report_code"] == "registration_dashboard"
     assert len(manifest["inputs"][0]["sha256"]) == 64
@@ -207,6 +207,28 @@ def test_pipeline_generates_exact_results_and_traceable_artifacts(tmp_path: Path
         "chart_funnel",
         "chart_last_ten_days",
     }
+
+
+def test_registration_csv_generates_results(tmp_path: Path) -> None:
+    csv_path = tmp_path / "users.csv"
+    pd.DataFrame([{
+        "ID": "P001", "User": "alpha", "Registered At": "06/07/26 13:32:32",
+        "Reg. finished": "Completed", "Status": "active", "Disabled": "no",
+        "Deleted": "no", "Last Deposit": "07/07/26 10:15:00",
+    }]).to_csv(csv_path, index=False)
+    artifacts = RegistrationDashboardReport().run(
+        csv_path, tmp_path / "csv-run",
+        report_date=date(2026, 7, 10),
+        reporting_period_start=date(2026, 7, 5),
+        reporting_period_end=date(2026, 7, 8),
+        generation_uuid="csv-date-test",
+        render_outputs=False,
+    )
+    result = json.loads(artifacts["calculated_results"].read_text())
+    assert result["summary"]["total_registrations"] == 1
+    assert result["summary"]["completed_registrations"] == 1
+    assert result["highest_registration_day"] == {"date": "2026-07-06", "value": 1}
+    assert "EXCLUDING" not in artifacts["dashboard_html"].read_text()
 
 
 def test_duplicate_player_ids_fail_under_provisional_strict_default(tmp_path: Path) -> None:

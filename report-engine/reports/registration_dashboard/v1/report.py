@@ -14,7 +14,7 @@ from .renderer import RegistrationRenderer
 from .schemas import RegistrationResult
 from .validator import RegistrationWorkbookValidator
 
-VERSIONS = ("1.2.0", "1.2.0-provisional.1", "1.2.0")
+VERSIONS = ("1.3.0", "1.3.0-provisional.1", "1.2.1")
 
 
 class RegistrationDashboardReport(BaseReport):

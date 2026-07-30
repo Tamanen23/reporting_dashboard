@@ -3,9 +3,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
 
 import matplotlib.pyplot as plt
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
@@ -16,7 +15,7 @@ from pypdf import PdfReader
 from core.contracts import BaseReport
 from core.exceptions import InputValidationError
 
-VERSION = "1.0.0-provisional.3"
+VERSION = "1.0.0-provisional.4"
 
 
 class OverallPerformanceDashboardReport(BaseReport):
@@ -31,6 +30,11 @@ class OverallPerformanceDashboardReport(BaseReport):
             (work_directory / folder).mkdir(parents=True, exist_ok=True)
         source = {key: json.loads(Path(path).read_text()) for key, path in input_paths.items()}
         acknowledged_source_discrepancies = []
+        excluded_dates = sorted({
+            value
+            for result in source.values()
+            for value in result.get("excluded_dates", [])
+        })
         for key, result in source.items():
             checks = result.get("reconciliation_report", result.get("reconciliation", []))
             check_rows = checks.get("checks", []) if isinstance(checks, dict) else checks
@@ -75,7 +79,7 @@ class OverallPerformanceDashboardReport(BaseReport):
             "withdrawals": sorted(pay.get("daily", []), key=lambda row: row["withdrawal_amount"], reverse=True)[:5],
             "payouts": top_payouts,
         }
-        period_days = max((reporting_period_end - reporting_period_start).days, 1)
+        period_days = max((reporting_period_end - reporting_period_start).days + 1, 1)
         registration_statistics = {
             "average": summary["registrations"] / period_days,
             "highest": max(registration_rows, key=lambda row: row["registrations"], default={"date": None, "registrations": 0}),
@@ -112,8 +116,11 @@ class OverallPerformanceDashboardReport(BaseReport):
             "warnings": ["Source generations were explicitly selected and locked by UUID and checksum."]
                 + [f"{item['source']}: {item.get('name', 'reference comparison')} differs from its audit benchmark; source-calculated value is preserved." for item in acknowledged_source_discrepancies],
             "report": {"date": report_date.strftime("%d %B %Y"), "start": reporting_period_start.strftime("%d %B %Y"),
-                       "end": (reporting_period_end - timedelta(days=1)).strftime("%d %B %Y"),
-                       "excluded": reporting_period_end.strftime("%d %B %Y")},
+                       "end": reporting_period_end.strftime("%d %B %Y"),
+                       "excluded_dates": [
+                           date.fromisoformat(value).strftime("%d %B %Y")
+                           for value in excluded_dates
+                       ]},
         }
         result_path = work_directory / "results/calculated-results.json"
         result_path.write_text(json.dumps(results, indent=2), encoding="utf-8")

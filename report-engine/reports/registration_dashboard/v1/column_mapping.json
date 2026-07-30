@@ -12,7 +12,7 @@
     "Date of Birth": "date_of_birth",
     "Tags": "tags",
     "Extra data": "extra_data",
-    "Registered Date": "registration_date",
+    "Registered Date / Registered At": "registration_date",
     "Last Login": "last_login",
     "Currency": "currency",
     "Balance": "balance",

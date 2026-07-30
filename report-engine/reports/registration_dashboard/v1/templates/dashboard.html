@@ -24,11 +24,11 @@
     </div>
     <div class="title">
       <h1>REGISTRATION DASHBOARD</h1>
-      <p>{{ period_start|upper }} – {{ period_end|upper }} <span>(EXCLUDING {{ excluded_date|upper }})</span></p>
+      <p>{{ period_start|upper }} – {{ period_end|upper }}{% if excluded_dates_label %} <span>(EXCLUDING {{ excluded_dates_label|upper }})</span>{% endif %}</p>
     </div>
     <div class="date-boxes">
       <div class="date-card"><svg><use href="#icon-calendar"/></svg><section><b>REPORT DATE</b><span>{{ report_date }}</span></section></div>
-      <div class="date-card period-card"><svg><use href="#icon-calendar"/></svg><section><b>REPORT PERIOD</b><span>{{ period_start }} – {{ period_end }}</span><small>(Excluding {{ excluded_date }})</small></section></div>
+      <div class="date-card period-card"><svg><use href="#icon-calendar"/></svg><section><b>REPORT PERIOD</b><span>{{ period_start }} – {{ period_end }}</span>{% if excluded_dates_label %}<small>(Excluding {{ excluded_dates_label }})</small>{% endif %}</section></div>
     </div>
   </header>
 

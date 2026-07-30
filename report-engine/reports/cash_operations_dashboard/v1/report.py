@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -15,10 +15,11 @@ from pypdf import PdfReader
 
 from core.contracts import BaseReport
 from core.exceptions import InputValidationError
+from core.tabular import parse_datetime, parse_numeric, read_table
 
 from .config import CashOperationsConfig
 
-VERSION = "1.0.0-provisional.1"
+VERSION = "1.0.0-provisional.3"
 HEADERS = [
     "Slip #", "Date & Time", "Currency", "Game", "Cash Amount",
     "Withholding Tax", "Type", "User #", "User Name", "Paid Out Total - Promo",
@@ -35,11 +36,11 @@ class CashOperationsDashboardReport(BaseReport):
         for name in ("prepared", "results", "charts", "render", "outputs", "manifest"):
             (work_directory / name).mkdir(parents=True, exist_ok=True)
         frame, validation, source = self._read(workbook_path)
-        effective_end = reporting_period_end - timedelta(days=1)
         frame = frame[
             frame.transaction_date.between(
-                pd.Timestamp(reporting_period_start), pd.Timestamp(effective_end)
+                pd.Timestamp(reporting_period_start), pd.Timestamp(reporting_period_end)
             )
+            & ~frame.transaction_date.dt.date.isin(self.config.excluded_dates)
         ].copy()
         if frame.empty:
             raise InputValidationError(
@@ -51,7 +52,8 @@ class CashOperationsDashboardReport(BaseReport):
         validation_path = work_directory / "prepared" / "validation-log.json"
         validation_path.write_text(json.dumps(validation, indent=2), encoding="utf-8")
         results = self._calculate(
-            frame, effective_end, reporting_period_start, reporting_period_end
+            frame, report_date, reporting_period_end, reporting_period_start,
+            self.config.excluded_dates,
         )
         result_path = work_directory / "results" / "calculated-results.json"
         result_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
@@ -76,10 +78,10 @@ class CashOperationsDashboardReport(BaseReport):
         manifest_path.write_text(json.dumps({
             "generation_uuid": generation_uuid,
             "report_code": "cash_operations_dashboard",
-            "report_date": effective_end.isoformat(),
+            "report_date": report_date.isoformat(),
             "reporting_period_start": reporting_period_start.isoformat(),
-            "reporting_period_end": effective_end.isoformat(),
-            "excluded_date": reporting_period_end.isoformat(),
+            "reporting_period_end": reporting_period_end.isoformat(),
+            "excluded_dates": sorted(value.isoformat() for value in self.config.excluded_dates),
             "definition_version": VERSION, "calculation_version": VERSION,
             "template_version": VERSION, "timezone": self.config.timezone,
             "generated_at": datetime.now(UTC).isoformat(),
@@ -101,22 +103,31 @@ class CashOperationsDashboardReport(BaseReport):
         return artifacts
 
     def _read(self, path: Path) -> tuple[pd.DataFrame, dict, dict]:
-        workbook = load_workbook(path, read_only=True, data_only=False)
-        if self.config.worksheet not in workbook.sheetnames:
-            raise InputValidationError(
-                f"Required worksheet '{self.config.worksheet}' was not found.",
-                code="CASH_OPERATIONS_WORKSHEET_MISSING",
-            )
-        sheet = workbook[self.config.worksheet]
-        headers = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
-        if headers != HEADERS:
+        workbook = None
+        if path.suffix.casefold() == ".csv":
+            raw_frame = read_table(path)
+            headers = [str(value).strip() for value in raw_frame.columns]
+            rows = list(raw_frame.itertuples(index=False, name=None))
+            worksheet_name = "CSV"
+        else:
+            workbook = load_workbook(path, read_only=True, data_only=False)
+            if self.config.worksheet not in workbook.sheetnames:
+                raise InputValidationError(
+                    f"Required worksheet '{self.config.worksheet}' was not found.",
+                    code="CASH_OPERATIONS_WORKSHEET_MISSING",
+                )
+            sheet = workbook[self.config.worksheet]
+            headers = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+            rows = sheet.iter_rows(min_row=2, values_only=True)
+            worksheet_name = self.config.worksheet
+        if any(header not in headers for header in HEADERS):
             raise InputValidationError(
                 "Cash Operations workbook headers do not match the production export.",
                 code="CASH_OPERATIONS_HEADERS_INVALID",
                 context={"expected": HEADERS, "observed": headers},
             )
         accepted, rejected = [], []
-        for row_number, values in enumerate(sheet.iter_rows(min_row=2, values_only=True), 2):
+        for row_number, values in enumerate(rows, 2):
             row = dict(zip(headers, values, strict=False))
             if not str(row["User #"] or "").strip():
                 rejected.append({"row": row_number, "code": "BLANK_PLAYER_ID"}); continue
@@ -126,34 +137,48 @@ class CashOperationsDashboardReport(BaseReport):
             if kind not in {self.config.bet_type, self.config.payout_type}:
                 rejected.append({"row": row_number, "code": "INVALID_TYPE"}); continue
             try:
-                amount = Decimal(str(row["Cash Amount"]))
-                timestamp = pd.Timestamp(row["Date & Time"])
+                parsed_amount = parse_numeric(row["Cash Amount"])
+                if pd.isna(parsed_amount):
+                    raise ValueError("Cash Amount is not numeric.")
+                amount = Decimal(str(parsed_amount))
+                parsed_tax = parse_numeric(row["Withholding Tax"])
+                withholding_tax = 0 if pd.isna(parsed_tax) else float(parsed_tax)
+                timestamp = parse_datetime(
+                    row["Date & Time"], csv_source=path.suffix.casefold() == ".csv"
+                )
             except (ArithmeticError, TypeError, ValueError):
                 rejected.append({"row": row_number, "code": "INVALID_VALUE"}); continue
+            if pd.isna(timestamp):
+                rejected.append({"row": row_number, "code": "INVALID_TRANSACTION_DATE"}); continue
             accepted.append({
                 "source_row": row_number, "slip_id": str(row["Slip #"]).strip(),
                 "transaction_date": timestamp.normalize(), "transaction_timestamp": timestamp,
                 "currency": str(row["Currency"]).strip(), "game": str(row["Game"]).strip(),
-                "cash_amount": float(amount), "withholding_tax": float(row["Withholding Tax"] or 0),
+                "cash_amount": float(amount), "withholding_tax": withholding_tax,
                 "transaction_type": kind, "player_id": str(row["User #"]).strip(),
                 "username": str(row["User Name"]).strip(),
             })
-        first_slip = workbook["Sheet1"]["F48"].value if "Sheet1" in workbook.sheetnames else None
-        last_slip = workbook["Sheet1"]["G48"].value if "Sheet1" in workbook.sheetnames else None
-        workbook.close()
+        if workbook is not None:
+            first_slip = workbook["Sheet1"]["F48"].value if "Sheet1" in workbook.sheetnames else None
+            last_slip = workbook["Sheet1"]["G48"].value if "Sheet1" in workbook.sheetnames else None
+            workbook.close()
+        else:
+            timestamps = [item["transaction_timestamp"] for item in accepted]
+            first_slip = min(timestamps) if timestamps else None
+            last_slip = max(timestamps) if timestamps else None
         if not accepted:
             raise InputValidationError("No valid Cash Operations rows found.", code="NO_VALID_CASH_OPERATIONS")
         accepted_frame = pd.DataFrame(accepted)
         accepted_frame.attrs["first_slip"] = first_slip.isoformat() if first_slip else None
         accepted_frame.attrs["last_slip"] = last_slip.isoformat() if last_slip else None
         return accepted_frame, {
-            "worksheet": self.config.worksheet, "source_rows": len(accepted) + len(rejected),
+            "worksheet": worksheet_name, "source_rows": len(accepted) + len(rejected),
             "accepted_rows": len(accepted), "rejected_rows": len(rejected), "issues": rejected,
             "warnings": [
                 "The production workbook has no explicit bet status or settlement date columns; Type=Bet/Payout is the provisional settled-transaction definition."
             ],
         }, {
-            "worksheet": self.config.worksheet, "header_row": 1,
+            "worksheet": worksheet_name, "header_row": 1,
             "column_mapping": {
                 "bet_id": "Slip #", "recognition_date": "Date & Time",
                 "currency": "Currency", "game": "Game", "stake_or_payout": "Cash Amount",
@@ -162,7 +187,10 @@ class CashOperationsDashboardReport(BaseReport):
             },
         }
 
-    def _calculate(self, frame: pd.DataFrame, end: date, start: date, excluded: date) -> dict:
+    def _calculate(
+        self, frame: pd.DataFrame, report_date: date, end: date, start: date,
+        excluded_dates: frozenset[date],
+    ) -> dict:
         bets = frame[frame.transaction_type == self.config.bet_type]
         payouts = frame[frame.transaction_type == self.config.payout_type]
         stake = Decimal(str(bets.cash_amount.sum()))
@@ -232,9 +260,9 @@ class CashOperationsDashboardReport(BaseReport):
         ]
         warnings.extend(f"REVIEW REQUIRED: {item['metric']}: {item['message']}" for item in discrepancies)
         return {
-            "report_code": "cash_operations_dashboard", "report_date": end.isoformat(),
+            "report_code": "cash_operations_dashboard", "report_date": report_date.isoformat(),
             "period_start": start.isoformat(), "period_end": end.isoformat(),
-            "excluded_date": excluded.isoformat(),
+            "excluded_dates": sorted(value.isoformat() for value in excluded_dates),
             "summary": {
                 "bet_count": len(bets), "bet_amount": float(stake),
                 "payout_count": len(payouts), "payout_amount": float(paid),

@@ -32,8 +32,8 @@ def test_player_activity_builds_mutually_exclusive_master_dataset(tmp_path):
         ["P3", "Test Account", date(2026, 6, 13), "Yes", "No", "No"],
     ])
     _workbook(payment_path, "Deposits & Withdrawals-26", PAYMENT_HEADERS, [
-        ["Alice", "P1", 1000, "Yes", "Deposit", date(2026, 6, 12), "Completed [Approved]"],
-        ["Bob", "P2", 500, "Yes", "Deposit", date(2026, 6, 13), "Completed [Approved]"],
+        ["Alice", "P1", 1000, "Airtel", "Yes", "Deposit", date(2026, 6, 12), "Completed [Approved]"],
+        ["Bob", "P2", 500, "MomoMTN", "Yes", "Deposit", date(2026, 6, 13), "Completed [Approved]"],
     ])
     _workbook(
         bet_legs_path,
@@ -58,10 +58,40 @@ def test_player_activity_builds_mutually_exclusive_master_dataset(tmp_path):
         render_outputs=False,
     )
     result = json.loads(artifacts["calculated_results"].read_text())
-    assert result["kpis"]["registered_players"] == 3
+    assert result["kpis"]["registered_players"] == 2
     assert result["kpis"]["depositors"] == 2
     assert result["kpis"]["active_players_last_7_days"] == 1
-    assert sum(row["count"] for row in result["segments"]) == 3
+    assert sum(row["count"] for row in result["segments"]) == 2
     assert result["reconciliation_report"]["passed"] is True
+    assert result["report"]["period_end"] == "22 July 2026"
+    assert result["report"]["excluded_dates"] == []
+    assert "EXCLUDING" not in artifacts["dashboard_html"].read_text()
     assert artifacts["master_player_dataset"].exists()
     assert artifacts["crm_segment_export"].exists()
+
+
+def test_player_activity_accepts_three_csv_sources(tmp_path):
+    user_path = tmp_path / "users.csv"
+    payment_path = tmp_path / "payments.csv"
+    bet_path = tmp_path / "bets.csv"
+    pd.DataFrame([
+        ["P1", "Alice", "2026-06-11", "Yes", "No", "No"],
+    ], columns=USER_HEADERS).to_csv(user_path, index=False)
+    pd.DataFrame([
+        ["Alice", "P1", 1000, "Airtel", "Yes", "Deposit", "2026-06-12", "Completed [Approved]"],
+    ], columns=PAYMENT_HEADERS).to_csv(payment_path, index=False)
+    pd.DataFrame([
+        ["S1", "P1", "Alice", "2026-07-20", "Lost", "Lost", "Sports", 100],
+    ], columns=BET_LEGS_HEADERS).to_csv(bet_path, index=False)
+
+    artifacts = PlayerActivityRetentionDashboardReport().run(
+        {"user_list": user_path, "payment_transactions": payment_path, "bet_legs": bet_path},
+        tmp_path / "csv-work",
+        report_date=date(2026, 7, 21),
+        reporting_period_start=date(2026, 6, 11),
+        reporting_period_end=date(2026, 7, 22),
+        generation_uuid="csv-test", render_outputs=False,
+    )
+    result = json.loads(artifacts["calculated_results"].read_text())
+    assert result["kpis"]["registered_players"] == 1
+    assert result["kpis"]["depositors"] == 1

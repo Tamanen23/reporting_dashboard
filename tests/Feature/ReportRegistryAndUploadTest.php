@@ -120,6 +120,56 @@ final class ReportRegistryAndUploadTest extends TestCase
         Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
     }
 
+    public function test_valid_registration_csv_is_stored_with_its_real_format_and_queued(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        $csv = implode("\n", [
+            'ID,User,Registered At,Reg. finished,Status,Disabled,Deleted,Last deposit',
+            'P001,alice,01/07/26 10:30:00,Yes,Active,No,No,02/07/26 09:00:00',
+        ]);
+
+        $response = $this->actingAs(User::factory()->create())->post(
+            route('reports.store'),
+            $this->payload(UploadedFile::fake()->createWithContent('User List.csv', $csv)),
+        );
+
+        $response->assertSessionHasNoErrors();
+        $file = ReportGeneration::query()->with('files')->sole()->files->sole();
+        self::assertSame('csv', $file->extension);
+        self::assertStringEndsWith('.csv', $file->stored_filename);
+        Storage::disk('local')->assertExists($file->stored_path);
+        Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
+    }
+
+    public function test_payment_csv_is_stored_without_a_bonus_summary_file(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        $user = User::factory()->create();
+        $transactions = implode("\n", [
+            'Username,User ID,Currency,Amount,Gateway,Processed,Type,Processed Date,Status',
+            'alice,P001,XAF,1000,Airtel,Yes,Deposit,2026-07-20,Completed [Approved]',
+        ]);
+        $payload = [
+            'report_code' => 'deposits_withdrawals_bonus_dashboard',
+            'report_date' => '2026-07-22',
+            'reporting_period_start' => '2026-07-20',
+            'reporting_period_end' => '2026-07-22',
+            'inputs' => [
+                'payment_transactions' => UploadedFile::fake()->createWithContent('Payments.csv', $transactions),
+            ],
+        ];
+
+        $this->actingAs($user)->post(route('reports.store'), $payload)
+            ->assertSessionHasNoErrors();
+
+        $files = ReportGeneration::query()->with('files')->sole()->files->keyBy('input_key');
+        self::assertSame(['payment_transactions'], $files->keys()->values()->all());
+        self::assertSame('csv', $files['payment_transactions']->extension);
+        Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
+    }
+
     public function test_blank_optional_excluded_date_is_accepted_and_removed(): void
     {
         Queue::fake();

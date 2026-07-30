@@ -9,6 +9,7 @@ class PaymentsConfig:
     aggregate_worksheet: str = "Sheet1"
     successful_statuses: frozenset[str] = frozenset({"completed [approved]"})
     processed_values: frozenset[str] = frozenset({"yes", "true", "1"})
+    allowed_gateways: frozenset[str] = frozenset({"momomtn", "airtel", "retail"})
     excluded_dates: frozenset[date] = frozenset()
     summary_scope: str = "workbook_snapshot"
     published_deposit_adjustment_xaf: Decimal = Decimal(0)

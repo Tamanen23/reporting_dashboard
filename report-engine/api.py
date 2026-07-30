@@ -8,17 +8,18 @@ from pydantic import BaseModel, Field
 
 from core.exceptions import ReportEngineError
 from reports.cash_operations_dashboard.v1 import CashOperationsDashboardReport
+from reports.cash_operations_dashboard.v1.config import CashOperationsConfig
 from reports.deposits_withdrawals_bonus_dashboard.v1 import (
     DepositsWithdrawalsBonusDashboardReport,
 )
 from reports.deposits_withdrawals_bonus_dashboard.v1.config import PaymentsConfig
-from reports.registration_dashboard.v1 import RegistrationDashboardReport
-from reports.registration_dashboard.v1.config import RegistrationConfig
+from reports.overall_performance_dashboard.v1 import OverallPerformanceDashboardReport
 from reports.player_activity_retention_dashboard.v1 import (
     PlayerActivityRetentionDashboardReport,
 )
 from reports.player_activity_retention_dashboard.v1.config import PlayerActivityConfig
-from reports.overall_performance_dashboard.v1 import OverallPerformanceDashboardReport
+from reports.registration_dashboard.v1 import RegistrationDashboardReport
+from reports.registration_dashboard.v1.config import RegistrationConfig
 
 app = FastAPI(title="Report Automation Engine", docs_url=None, redoc_url=None)
 
@@ -222,7 +223,9 @@ def generate_cash_operations(request: CashOperationsRequest) -> dict[str, str]:
         if not path.is_absolute() or "/reports" not in str(path):
             raise HTTPException(status_code=400, detail="Paths must be inside /reports.")
     try:
-        artifacts = CashOperationsDashboardReport().run(
+        artifacts = CashOperationsDashboardReport(
+            CashOperationsConfig(excluded_dates=frozenset(request.excluded_dates))
+        ).run(
             request.input_path, request.work_directory,
             report_date=request.report_date,
             reporting_period_start=request.reporting_period_start,

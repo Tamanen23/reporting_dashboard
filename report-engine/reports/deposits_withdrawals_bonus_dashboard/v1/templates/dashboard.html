@@ -25,18 +25,18 @@
     <div class="brand"><img src="{{ logo_uri }}"><div><b>BET<span>NABISO</span></b><small>ENTRE NOUS IL Y A QUE LA GAGNE</small></div></div>
     <div class="title">
       <h1>DEPOSITS, WITHDRAWALS &amp; BONUS DASHBOARD</h1>
-      <p>{{ datefmt(period_start)|upper }} – {{ datefmt(period_end)|upper }} (EXCLUDING {{ datefmt(excluded_date)|upper }})</p>
+      <p>{{ datefmt(period_start)|upper }} – {{ datefmt(period_end)|upper }}{% if excluded_dates %} (EXCLUDING {% for value in excluded_dates %}{{ datefmt(value)|upper }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}</p>
     </div>
     <div class="date-box"><strong><i>▦</i> REPORT DATE</strong><span>{{ datefmt(report_date) }}</span></div>
-    <div class="date-box period"><strong><i>▦</i> REPORT PERIOD</strong><span>{{ datefmt(period_start) }} – {{ datefmt(period_end) }}</span><small>(Excluding {{ datefmt(excluded_date) }})</small></div>
+    <div class="date-box period"><strong><i>▦</i> REPORT PERIOD</strong><span>{{ datefmt(period_start) }} – {{ datefmt(period_end) }}</span>{% if excluded_dates %}<small>(Excluding {% for value in excluded_dates %}{{ datefmt(value) }}{% if not loop.last %}, {% endif %}{% endfor %})</small>{% endif %}</div>
   </header>
 
   <section class="cards">
     <article class="card green"><div class="card-icon">▱</div><div><h3>TOTAL DEPOSITS</h3><b>{{ fmt(summary.deposit_count) }}</b><p>Transactions</p><strong>XAF {{ fmt(summary.deposit_amount) }}</strong></div></article>
     <article class="card red"><div class="card-icon">▰</div><div><h3>TOTAL WITHDRAWALS</h3><b>{{ fmt(summary.withdrawal_count) }}</b><p>Transactions</p><strong>XAF {{ fmt(summary.withdrawal_amount) }}</strong></div></article>
     <article class="card lime"><div class="card-icon">⟳</div><div><h3>NET CASH FLOW</h3><strong>XAF {{ fmt(summary.net_cash_flow) }}</strong><p>(Deposits – Withdrawals)</p></div></article>
-    <article class="card blue"><div class="card-icon">♁</div><div><h3>BONUS CREDITED</h3><b>{{ fmt(summary.bonus_credited_count) }}</b><p>Bonus Transactions</p><strong>XAF {{ fmt(summary.bonus_credited_amount) }}</strong></div></article>
-    <article class="card purple"><div class="card-icon">⟳</div><div><h3>BONUS CONVERTED</h3><strong>XAF {{ fmt(summary.bonus_converted_amount) }}</strong></div></article>
+    <article class="card blue"><div class="card-icon">♁</div><div><h3>BONUS CREDITED</h3>{% if bonus.available %}<b>{{ fmt(summary.bonus_credited_count) }}</b><p>Bonus Transactions</p><strong>XAF {{ fmt(summary.bonus_credited_amount) }}</strong>{% else %}<b>N/A</b><p>Not available in CSV</p>{% endif %}</div></article>
+    <article class="card purple"><div class="card-icon">⟳</div><div><h3>BONUS CONVERTED</h3>{% if bonus.available %}<strong>XAF {{ fmt(summary.bonus_converted_amount) }}</strong>{% else %}<strong>UNAVAILABLE</strong>{% endif %}</div></article>
     <article class="card cyan"><div class="card-icon">▰</div><div><h3>RETAIL DEPOSITS</h3><b>{{ fmt(summary.retail_deposit_count) }}</b><p>Transactions</p><strong>XAF {{ fmt(summary.retail_deposit_amount) }}</strong></div></article>
   </section>
 
@@ -53,7 +53,7 @@
         <div><span>↘</span><p>HIGHEST WITHDRAWAL DAY<small>{{ datefmt(highest_withdrawal_day.date) }}</small></p><strong class="red">XAF {{ fmt(highest_withdrawal_day.withdrawal_amount) }}</strong></div>
         <div><span>▰</span><p>RETAIL DEPOSITS<small>{{ fmt(summary.retail_deposit_count) }} Transactions</small></p><strong class="cyan">XAF {{ fmt(summary.retail_deposit_amount) }}</strong></div>
         <div><span>⚖</span><p>DEPOSIT / WITHDRAWAL RATIO<small>(By Amount)</small></p><strong>XAF {{ '%.2f'|format(summary.deposit_withdrawal_ratio) }} : 1</strong></div>
-        <div><span>%</span><p>BONUS CONVERSION RATE<small>(Converted / Credited)</small></p><strong class="purple">{{ pct(summary.bonus_conversion_rate) }}%</strong></div>
+        <div><span>%</span><p>BONUS CONVERSION RATE<small>(Converted / Credited)</small></p><strong class="purple">{% if bonus.available %}{{ pct(summary.bonus_conversion_rate) }}%{% else %}UNAVAILABLE{% endif %}</strong></div>
       </div>
     </div>
   </section>

@@ -94,7 +94,7 @@
             }
             target.innerHTML = '<div class="form-section-title"><span>↑</span> Source workbook</div>' + definition.inputs.map(input => {
                 const accept = input.extensions.map(extension => '.' + extension).join(',');
-                return `<div class="upload-box"><span class="upload-icon" aria-hidden="true">↥</span><div class="upload-copy"><strong>${escapeHtml(input.label)}</strong><span>${escapeHtml(input.description || 'Choose the corresponding source workbook')}</span><span class="selected-file" hidden></span></div><input id="input-${input.key}" name="inputs[${input.key}]" type="file" accept="${escapeHtml(accept)}" aria-label="${escapeHtml(input.label)}" required></div>`;
+                return `<div class="upload-box"><span class="upload-icon" aria-hidden="true">↥</span><div class="upload-copy"><strong>${escapeHtml(input.label)}${input.required ? '' : ' <small>(conditional)</small>'}</strong><span>${escapeHtml(input.description || 'Choose the corresponding source file')}</span><span class="selected-file" hidden></span></div><input id="input-${input.key}" name="inputs[${input.key}]" type="file" accept="${escapeHtml(accept)}" aria-label="${escapeHtml(input.label)}" ${input.required ? 'required' : ''}></div>`;
             }).join('');
             target.querySelectorAll('input[type=file]').forEach(input => input.addEventListener('change', () => {
                 const selected = input.closest('.upload-box').querySelector('.selected-file');

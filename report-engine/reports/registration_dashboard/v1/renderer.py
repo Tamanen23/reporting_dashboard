@@ -114,6 +114,14 @@ class RegistrationRenderer:
         assets = self.config.assets_directory or (Path(__file__).parent / "assets")
         display_start = min(result.included_dates)
         display_end = max(result.included_dates)
+        actual_excluded_dates = {
+            value
+            for value in self.config.excluded_dates
+            if result.reporting_period_start <= value <= result.reporting_period_end
+        }
+        excluded_dates_label = ", ".join(
+            value.strftime("%d %b %Y") for value in sorted(actual_excluded_dates)
+        )
         return {
             "css_uri": (self.templates / "dashboard.css").resolve().as_uri(),
             "logo_uri": (assets / "Favicon.jpeg").resolve().as_uri(),
@@ -122,7 +130,7 @@ class RegistrationRenderer:
             "period_start": display_start.strftime("%d %b %Y"),
             "period_end": display_end.strftime("%d %b %Y"),
             "report_date": display_end.strftime("%d %b %Y"),
-            "excluded_date": result.report_date.strftime("%d %b %Y"),
+            "excluded_dates_label": excluded_dates_label,
             "calculation_version": result.calculation_version,
             "template_version": result.template_version,
             "timezone": result.timezone,
