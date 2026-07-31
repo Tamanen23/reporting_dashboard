@@ -10,7 +10,9 @@ Route::get('/', function () {
 
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthController::class, 'create'])->name('login');
-    Route::post('/login', [AuthController::class, 'store'])->name('login.store');
+    Route::post('/login', [AuthController::class, 'store'])
+        ->middleware('throttle:5,1')
+        ->name('login.store');
 });
 
 Route::middleware('auth')->group(function (): void {

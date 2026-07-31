@@ -40,3 +40,5 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker compose config --quiet
       - run: docker compose build app report-engine
+      - run: docker compose --env-file .env.production.example -f compose.production.yml config --quiet
+      - run: docker compose --env-file .env.production.example -f compose.production.yml build app nginx report-engine

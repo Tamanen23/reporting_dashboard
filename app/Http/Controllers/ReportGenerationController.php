@@ -339,6 +339,7 @@ final class ReportGenerationController extends Controller
                 if ($input->is_required) {
                     throw ValidationException::withMessages(["inputs.{$input->input_key}" => "The {$input->label} is required."]);
                 }
+
                 continue;
             }
             $extension = mb_strtolower($upload->getClientOriginalExtension());
@@ -455,6 +456,7 @@ final class ReportGenerationController extends Controller
                     'context' => ['input_keys' => array_keys($validatedInputs)],
                     'occurred_at' => now(),
                 ]);
+
                 return $generation;
             });
         } catch (\Throwable $exception) {
@@ -583,9 +585,11 @@ final class ReportGenerationController extends Controller
                 'last_progress_at' => now(),
             ]);
             $generation->events()->create(['stage' => ProcessingStage::FileStorage, 'level' => EventLevel::Info, 'event_code' => 'DEPENDENCIES_RESOLVED', 'message' => 'Exact-period module results were resolved and checksummed.', 'context' => ['source_generation_uuids' => collect($dependencies)->pluck('generation_uuid')->all()], 'occurred_at' => now()]);
+
             return $generation;
         });
         GenerateRegistrationDashboard::dispatch($generation->id);
+
         return redirect()->route('reports.show', $generation)->with('success', 'Overall Performance generation queued.');
     }
 

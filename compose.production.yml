@@ -1,0 +1,195 @@
+name: report-automation
+
+x-app-environment: &app-environment
+  APP_NAME: ${APP_NAME}
+  APP_ENV: production
+  APP_KEY: ${APP_KEY}
+  APP_DEBUG: "false"
+  APP_URL: ${APP_URL}
+  APP_TIMEZONE: ${APP_TIMEZONE:-Indian/Mauritius}
+  APP_LOCALE: en
+  LOG_CHANNEL: stack
+  LOG_STACK: stderr
+  LOG_LEVEL: ${LOG_LEVEL:-warning}
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_DATABASE: ${POSTGRES_DB}
+  DB_USERNAME: ${POSTGRES_USER}
+  DB_PASSWORD: ${POSTGRES_PASSWORD}
+  REDIS_CLIENT: phpredis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
+  REDIS_QUEUE_RETRY_AFTER: ${REDIS_QUEUE_RETRY_AFTER:-1800}
+  SESSION_DRIVER: redis
+  SESSION_LIFETIME: ${SESSION_LIFETIME:-120}
+  SESSION_ENCRYPT: "true"
+  SESSION_SECURE_COOKIE: "true"
+  SESSION_HTTP_ONLY: "true"
+  SESSION_SAME_SITE: lax
+  CACHE_STORE: redis
+  QUEUE_CONNECTION: redis
+  FILESYSTEM_DISK: local
+  REPORT_ENGINE_URL: http://report-engine:8000
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+
+services:
+  app:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile.production
+    environment: *app-environment
+    volumes:
+      - reports_data:/var/www/html/storage/app/private/reports
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php-fpm", "-t"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile.production
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8088}:80"
+    networks:
+      - frontend
+    depends_on:
+      app:
+        condition: service_healthy
+
+  queue-worker:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile.production
+    command:
+      - php
+      - artisan
+      - queue:work
+      - redis
+      - --queue=report-processing
+      - --timeout=1500
+      - --tries=4
+      - --backoff=30,120,300
+      - --sleep=2
+      - --max-time=3600
+    stop_grace_period: 25m
+    environment: *app-environment
+    volumes:
+      - reports_data:/var/www/html/storage/app/private/reports
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      report-engine:
+        condition: service_healthy
+
+  scheduler:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile.production
+    command: ["php", "artisan", "schedule:work"]
+    environment: *app-environment
+    volumes:
+      - reports_data:/var/www/html/storage/app/private/reports
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  report-engine:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/report-engine/Dockerfile.production
+    shm_size: 1gb
+    volumes:
+      - reports_data:/reports
+    networks:
+      - backend
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    <<: *service-defaults
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    <<: *service-defaults
+    image: redis:7.4-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+networks:
+  frontend:
+  backend:
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  reports_data:

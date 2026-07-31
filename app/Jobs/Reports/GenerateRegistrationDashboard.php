@@ -23,7 +23,7 @@ final class GenerateRegistrationDashboard implements ShouldQueue
 
     public int $tries = 4;
 
-    public int $timeout = 900;
+    public int $timeout = 1500;
 
     public function __construct(public readonly int $generationId)
     {
@@ -32,7 +32,7 @@ final class GenerateRegistrationDashboard implements ShouldQueue
 
     public function middleware(): array
     {
-        return [(new WithoutOverlapping("report-generation:{$this->generationId}"))->expireAfter(960)];
+        return [(new WithoutOverlapping("report-generation:{$this->generationId}"))->expireAfter(1560)];
     }
 
     public function backoff(): array
@@ -230,5 +230,4 @@ final class GenerateRegistrationDashboard implements ShouldQueue
             default => OutputType::Json,
         };
     }
-
 }

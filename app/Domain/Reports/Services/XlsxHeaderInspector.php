@@ -73,8 +73,7 @@ final class XlsxHeaderInspector
         ?string $expectedWorksheet = null,
         string $profile = 'registration_dashboard',
         ?string $extension = null,
-    ): array
-    {
+    ): array {
         $extension = mb_strtolower($extension ?: pathinfo($path, PATHINFO_EXTENSION));
         if ($extension === 'csv') {
             return $this->inspectCsv($path, $requiredCanonicalFields, $profile);

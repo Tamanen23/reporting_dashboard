@@ -111,3 +111,18 @@ See [SECURITY.md](SECURITY.md) before sharing the repository.
 - [Report lifecycle](docs/report-processing-lifecycle.md)
 - [Adding a report type](docs/adding-a-report-type.md)
 - [Implementation audit](docs/current-implementation-audit.md)
+- [Portainer production deployment](docs/portainer-production-deployment.md)
+
+## Production deployment
+
+Production uses the separate `compose.production.yml` stack. It builds immutable
+application images, keeps PostgreSQL, Redis and the report engine private, binds
+Nginx to localhost, persists report data, and runs dedicated queue and scheduler
+services. Do not deploy the development `docker-compose.yml` to a server.
+
+Validate the production definition locally:
+
+```bash
+docker compose --env-file .env.production.example -f compose.production.yml config --quiet
+docker compose --env-file .env.production.example -f compose.production.yml build
+```

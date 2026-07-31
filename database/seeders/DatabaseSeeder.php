@@ -18,10 +18,12 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-        User::query()->updateOrCreate(
-            ['email' => 'test@example.com'],
-            ['name' => 'Test User', 'password' => 'password'],
-        );
+        if (app()->environment('local')) {
+            User::query()->updateOrCreate(
+                ['email' => 'test@example.com'],
+                ['name' => 'Test User', 'password' => 'password'],
+            );
+        }
 
         app(ReportDefinitionRegistry::class)->syncManifests();
     }
