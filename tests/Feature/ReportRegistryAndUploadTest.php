@@ -37,7 +37,10 @@ final class ReportRegistryAndUploadTest extends TestCase
         self::assertSame('reports.registration_dashboard.v1.report.RegistrationDashboardReport', $registration->processor_identifier);
         self::assertSame('user_list', $registration->inputs->sole()->input_key);
         $payments = ReportDefinition::query()->with('inputs')->where('code', 'deposits_withdrawals_bonus_dashboard')->firstOrFail();
-        self::assertSame('payment_transactions', $payments->inputs->sole()->input_key);
+        self::assertSame(
+            ['payment_transactions', 'bonus_summary'],
+            $payments->inputs->sortBy('display_order')->pluck('input_key')->all(),
+        );
         $playerActivity = ReportDefinition::query()->with('inputs')->where('code', 'player_activity_retention_dashboard')->firstOrFail();
         self::assertSame(
             ['user_list', 'payment_transactions', 'bet_legs'],
@@ -142,7 +145,7 @@ final class ReportRegistryAndUploadTest extends TestCase
         Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
     }
 
-    public function test_payment_csv_is_stored_without_a_bonus_summary_file(): void
+    public function test_payment_and_bonus_csv_files_are_stored_and_queued(): void
     {
         Queue::fake();
         Storage::fake('local');
@@ -151,6 +154,12 @@ final class ReportRegistryAndUploadTest extends TestCase
             'Username,User ID,Currency,Amount,Gateway,Processed,Type,Processed Date,Status',
             'alice,P001,XAF,1000,Airtel,Yes,Deposit,2026-07-20,Completed [Approved]',
         ]);
+        $bonus = implode("\n", [
+            'Wallet Type,Currency,Sum In,Sum Out,Count In,Count Out',
+            'Bonus | Regular,XAF,500,125,4,1',
+            'Bonus | Casino,XAF,200,50,2,1',
+            'Total,XAF,700,175,6,2',
+        ]);
         $payload = [
             'report_code' => 'deposits_withdrawals_bonus_dashboard',
             'report_date' => '2026-07-22',
@@ -158,6 +167,7 @@ final class ReportRegistryAndUploadTest extends TestCase
             'reporting_period_end' => '2026-07-22',
             'inputs' => [
                 'payment_transactions' => UploadedFile::fake()->createWithContent('Payments.csv', $transactions),
+                'bonus_summary' => UploadedFile::fake()->createWithContent('Bonus Summary.csv', $bonus),
             ],
         ];
 
@@ -165,9 +175,35 @@ final class ReportRegistryAndUploadTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $files = ReportGeneration::query()->with('files')->sole()->files->keyBy('input_key');
-        self::assertSame(['payment_transactions'], $files->keys()->values()->all());
+        self::assertEqualsCanonicalizing(
+            ['payment_transactions', 'bonus_summary'],
+            $files->keys()->values()->all(),
+        );
         self::assertSame('csv', $files['payment_transactions']->extension);
+        self::assertSame('csv', $files['bonus_summary']->extension);
         Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
+    }
+
+    public function test_payment_csv_requires_bonus_summary_csv(): void
+    {
+        Queue::fake();
+        $transactions = implode("\n", [
+            'Username,User ID,Currency,Amount,Gateway,Processed,Type,Processed Date,Status',
+            'alice,P001,XAF,1000,Airtel,Yes,Deposit,2026-07-20,Completed [Approved]',
+        ]);
+
+        $this->actingAs(User::factory()->create())->post(route('reports.store'), [
+            'report_code' => 'deposits_withdrawals_bonus_dashboard',
+            'report_date' => '2026-07-22',
+            'reporting_period_start' => '2026-07-20',
+            'reporting_period_end' => '2026-07-22',
+            'inputs' => [
+                'payment_transactions' => UploadedFile::fake()->createWithContent('Payments.csv', $transactions),
+            ],
+        ])->assertSessionHasErrors('inputs.bonus_summary');
+
+        self::assertSame(0, ReportGeneration::query()->count());
+        Queue::assertNothingPushed();
     }
 
     public function test_blank_optional_excluded_date_is_accepted_and_removed(): void

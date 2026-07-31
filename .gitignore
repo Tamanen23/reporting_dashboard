@@ -21,6 +21,7 @@
 /vendor
 /tmp
 /backups
+/production.env
 
 # Python environments, caches and build products
 __pycache__/

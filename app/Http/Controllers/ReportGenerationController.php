@@ -142,6 +142,10 @@ final class ReportGenerationController extends Controller
                     $playerFiles['user_list']['sha256'], $playerFiles['payment_transactions']['sha256'],
                     $playerFiles['bet_legs']['sha256'], $cashFile['sha256'],
                 ];
+                $paymentBonusFile = $payments['input_files']['bonus_summary'] ?? null;
+                if ($paymentBonusFile) {
+                    $hashes[] = $paymentBonusFile['sha256'];
+                }
                 $snapshotId = hash('sha256', implode('|', $hashes));
                 if ($overallSnapshots->has($snapshotId)) {
                     continue;
@@ -159,6 +163,7 @@ final class ReportGenerationController extends Controller
                     'files' => [
                         $playerFiles['user_list']['filename'], $playerFiles['payment_transactions']['filename'],
                         $playerFiles['bet_legs']['filename'], $cashFile['filename'],
+                        ...($paymentBonusFile ? [$paymentBonusFile['filename']] : []),
                     ],
                     'warnings' => $registration['warnings'] + $payments['warnings'] + $cash['warnings'] + $player['warnings'],
                     'completed_at' => max(array_filter([$registration['completed_at'], $payments['completed_at'], $cash['completed_at'], $player['completed_at']])),
@@ -366,6 +371,16 @@ final class ReportGenerationController extends Controller
                 'checksum' => hash_file('sha256', $upload->getRealPath()),
                 'extension' => $extension,
             ];
+        }
+
+        if (
+            $definition->code === 'deposits_withdrawals_bonus_dashboard'
+            && ($validatedInputs['payment_transactions']['extension'] ?? null) === 'csv'
+            && ! isset($validatedInputs['bonus_summary'])
+        ) {
+            throw ValidationException::withMessages([
+                'inputs.bonus_summary' => 'The Bonus Wallet summary CSV is required when the Deposits & Withdrawals source is CSV.',
+            ]);
         }
 
         $excludedDates = collect($request->validated('excluded_dates', []))

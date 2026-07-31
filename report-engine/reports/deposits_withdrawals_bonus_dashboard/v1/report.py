@@ -20,7 +20,7 @@ from core.tabular import parse_datetime, parse_numeric, read_table
 
 from .config import PaymentsConfig
 
-VERSION = "1.0.0-provisional.4"
+VERSION = "1.0.0-provisional.5"
 EXPECTED_HEADERS = [
     "Username", "User ID", "Tags", "Currency", "Amount", "Net deposit amount",
     "Gateway", "Gateway information", "Processed", "Type", "Created at",
@@ -37,6 +37,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         workbook_path: Path,
         work_directory: Path,
         *,
+        bonus_summary_path: Path | None = None,
         report_date: date,
         reporting_period_start: date,
         reporting_period_end: date,
@@ -47,7 +48,9 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         for name in ("prepared", "results", "charts", "render", "outputs", "manifest"):
             (work_directory / name).mkdir(parents=True, exist_ok=True)
 
-        frame, bonus, validation, source = self._read(workbook_path)
+        frame, bonus, validation, source = self._read(
+            workbook_path, bonus_summary_path=bonus_summary_path
+        )
         frame["included_in_reporting_period"] = (
             frame["transaction_date"].between(
                 pd.Timestamp(reporting_period_start), pd.Timestamp(reporting_period_end)
@@ -117,7 +120,15 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "key": "payment_transactions",
                 "filename": workbook_path.name,
                 "sha256": self._sha256(workbook_path),
-            }],
+            }] + (
+                [{
+                    "key": "bonus_summary",
+                    "filename": bonus_summary_path.name,
+                    "sha256": self._sha256(bonus_summary_path),
+                }]
+                if bonus_summary_path is not None
+                else []
+            ),
             "source": source,
             "configuration": {
                 "summary_scope": self.config.summary_scope,
@@ -158,7 +169,9 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         artifacts["manifest"] = manifest_path
         return artifacts
 
-    def _read(self, path: Path) -> tuple[pd.DataFrame, dict[str, Any], dict, dict]:
+    def _read(
+        self, path: Path, *, bonus_summary_path: Path | None = None
+    ) -> tuple[pd.DataFrame, dict[str, Any], dict, dict]:
         workbook = None
         if path.suffix.casefold() == ".csv":
             raw_frame = read_table(path)
@@ -247,7 +260,15 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "No valid payment transactions were found.", code="NO_VALID_PAYMENTS"
             )
         frame = pd.DataFrame(records)
-        bonus = self._unavailable_bonus() if path.suffix.casefold() == ".csv" else self._read_bonus(path)
+        if bonus_summary_path is not None:
+            bonus = self._read_bonus_csv(bonus_summary_path)
+            bonus_source = bonus_summary_path.name
+        elif path.suffix.casefold() == ".csv":
+            bonus = self._unavailable_bonus()
+            bonus_source = None
+        else:
+            bonus = self._read_bonus(path)
+            bonus_source = self.config.aggregate_worksheet
         validation = {
             "worksheet": worksheet_name,
             "source_rows": len(records) + len(rejected),
@@ -258,14 +279,14 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 (
                     "Bonus KPIs are unavailable because the CSV transaction export has no "
                     "credited-to-real bonus summary."
-                    if path.suffix.casefold() == ".csv"
-                    else "Bonus data is aggregate-only on Sheet1; transaction-level bonus reconciliation is unavailable."
+                    if not bonus["available"]
+                    else "Bonus data is aggregate-only; transaction-level bonus reconciliation is unavailable."
                 )
             ],
         }
         source = {
             "transaction_worksheet": worksheet_name,
-            "bonus_worksheet": None if path.suffix.casefold() == ".csv" else self.config.aggregate_worksheet,
+            "bonus_source": bonus_source,
             "header_row": 1,
             "column_mapping": {
                 "username": "Username", "player_id": "User ID", "currency": "Currency",
@@ -273,12 +294,112 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "transaction_type": "Type", "transaction_date": "Processed Date",
                 "status": "Status",
             },
-            "bonus_mapping": None if path.suffix.casefold() == ".csv" else {
-                "wallet_type": "S", "currency": "T", "credited_amount": "U",
-                "converted_amount": "V", "credited_count": "W", "converted_count": "X",
-            },
+            "bonus_mapping": (
+                {
+                    "wallet_type": "Wallet Type", "currency": "Currency",
+                    "credited_amount": "Sum In", "converted_amount": "Sum Out",
+                    "credited_count": "Count In", "converted_count": "Count Out",
+                }
+                if bonus_summary_path is not None
+                else (
+                    {
+                        "wallet_type": "S", "currency": "T", "credited_amount": "U",
+                        "converted_amount": "V", "credited_count": "W", "converted_count": "X",
+                    }
+                    if path.suffix.casefold() != ".csv"
+                    else None
+                )
+            ),
         }
         return frame, bonus, validation, source
+
+    def _read_bonus_csv(self, path: Path) -> dict[str, Any]:
+        frame = read_table(path)
+        required = {
+            "Wallet Type", "Currency", "Sum In", "Sum Out", "Count In", "Count Out"
+        }
+        missing = sorted(required.difference(str(column).strip() for column in frame.columns))
+        if missing:
+            raise InputValidationError(
+                "The Bonus Wallet summary CSV structure is invalid.",
+                code="BONUS_SUMMARY_HEADERS_INVALID",
+                context={"missing_headers": missing},
+            )
+
+        frame.columns = [str(column).strip() for column in frame.columns]
+        detail = frame[
+            frame["Wallet Type"].astype(str).str.strip().str.casefold().ne("total")
+        ].copy()
+        if detail.empty:
+            raise InputValidationError(
+                "The Bonus Wallet summary CSV has no wallet detail rows.",
+                code="BONUS_SUMMARY_EMPTY",
+            )
+
+        rows: list[dict[str, Any]] = []
+        for index, item in detail.iterrows():
+            wallet_type = str(item["Wallet Type"]).strip()
+            currency = str(item["Currency"]).strip().upper()
+            try:
+                credited_amount = float(parse_numeric(item["Sum In"]))
+                converted_amount = float(parse_numeric(item["Sum Out"]))
+                credited_count = int(parse_numeric(item["Count In"]))
+                converted_count = int(parse_numeric(item["Count Out"]))
+            except (TypeError, ValueError, OverflowError):
+                raise InputValidationError(
+                    "The Bonus Wallet summary CSV contains a non-numeric aggregate.",
+                    code="BONUS_SUMMARY_VALUE_INVALID",
+                    context={"row": int(index) + 2},
+                ) from None
+            if not wallet_type or currency != "XAF":
+                raise InputValidationError(
+                    "The Bonus Wallet summary CSV contains an invalid wallet or currency.",
+                    code="BONUS_SUMMARY_ROW_INVALID",
+                    context={"row": int(index) + 2, "currency": currency},
+                )
+            rows.append({
+                "wallet_type": wallet_type,
+                "credited_amount": credited_amount,
+                "converted_amount": converted_amount,
+                "credited_count": credited_count,
+                "converted_count": converted_count,
+            })
+
+        if len({row["wallet_type"].casefold() for row in rows}) != len(rows):
+            raise InputValidationError(
+                "The Bonus Wallet summary CSV contains duplicate wallet types.",
+                code="BONUS_SUMMARY_WALLET_DUPLICATE",
+            )
+
+        bonus = self._bonus_totals(rows)
+        total_rows = frame[
+            frame["Wallet Type"].astype(str).str.strip().str.casefold().eq("total")
+        ]
+        if len(total_rows) != 1:
+            raise InputValidationError(
+                "The Bonus Wallet summary CSV must contain exactly one Total row.",
+                code="BONUS_SUMMARY_TOTAL_INVALID",
+            )
+        total = total_rows.iloc[0]
+        expected = {
+            "credited_amount": float(parse_numeric(total["Sum In"])),
+            "converted_amount": float(parse_numeric(total["Sum Out"])),
+            "credited_count": int(parse_numeric(total["Count In"])),
+            "converted_count": int(parse_numeric(total["Count Out"])),
+        }
+        mismatches = {
+            key: {"detail_sum": bonus[key], "total_row": value}
+            for key, value in expected.items()
+            if abs(float(bonus[key]) - float(value)) > 0.01
+        }
+        if mismatches:
+            raise InputValidationError(
+                "The Bonus Wallet Total row does not match its wallet detail rows.",
+                code="BONUS_SUMMARY_TOTAL_MISMATCH",
+                context={"mismatches": mismatches},
+            )
+
+        return bonus
 
     def _read_bonus(self, path: Path) -> dict[str, Any]:
         workbook = load_workbook(path, read_only=True, data_only=True)
@@ -468,7 +589,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         warnings = [
             "PROVISIONAL: summary cards use the full workbook snapshot while the trend uses the selected reporting period.",
             (
-                "Bonus KPIs come from the aggregate bonus table on Sheet1; no row-level bonus transactions are available."
+                "Bonus KPIs come from the aggregate Bonus Wallet summary; no row-level bonus transactions are available."
                 if bonus["available"]
                 else "Bonus KPIs are unavailable from the supplied CSV transaction export."
             ),

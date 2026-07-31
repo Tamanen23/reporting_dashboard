@@ -66,9 +66,9 @@ return [
             'description' => 'Production-style deposits, withdrawals, net cash flow and bonus reporting.',
             'processor_identifier' => 'reports.deposits_withdrawals_bonus_dashboard.v1.report.DepositsWithdrawalsBonusDashboardReport',
             'template_identifier' => 'reports/deposits_withdrawals_bonus_dashboard/v1/templates/dashboard.html',
-            'definition_version' => '1.0.0-provisional.4',
-            'calculation_version' => '1.0.0-provisional.4',
-            'template_version' => '1.0.0-provisional.4',
+            'definition_version' => '1.0.0-provisional.5',
+            'calculation_version' => '1.0.0-provisional.5',
+            'template_version' => '1.0.0-provisional.5',
             'reporting_period_type' => 'date_range',
             'supported_outputs' => ['pdf', 'png'],
             'is_active' => true,
@@ -88,22 +88,40 @@ return [
                     'png' => ['width' => 1536, 'height' => 1024],
                 ],
             ],
-            'inputs' => [[
-                'input_key' => 'payment_transactions',
-                'label' => 'Deposits & Withdrawals report',
-                'description' => 'Upload the original Deposits & Withdrawals XLSX workbook or CSV export.',
-                'is_required' => true,
-                'accepted_extensions' => ['xlsx', 'csv'],
-                'required_columns' => [
-                    'username', 'player_id', 'currency', 'amount', 'gateway',
-                    'processed', 'transaction_type', 'transaction_date', 'status',
+            'inputs' => [
+                [
+                    'input_key' => 'payment_transactions',
+                    'label' => 'Deposits & Withdrawals report',
+                    'description' => 'Upload the original Deposits & Withdrawals XLSX workbook or CSV export.',
+                    'is_required' => true,
+                    'accepted_extensions' => ['xlsx', 'csv'],
+                    'required_columns' => [
+                        'username', 'player_id', 'currency', 'amount', 'gateway',
+                        'processed', 'transaction_type', 'transaction_date', 'status',
+                    ],
+                    'validation_rules' => [
+                        'max_size_kb' => 51200,
+                        'worksheet' => 'Deposits & Withdrawals-26',
+                    ],
+                    'display_order' => 10,
                 ],
-                'validation_rules' => [
-                    'max_size_kb' => 51200,
-                    'worksheet' => 'Deposits & Withdrawals-26',
+                [
+                    'input_key' => 'bonus_summary',
+                    'label' => 'Bonus Wallet summary',
+                    'description' => 'Upload the Bonus Wallet Deposits & Withdrawals CSV when the transaction source is CSV.',
+                    'is_required' => false,
+                    'accepted_extensions' => ['csv'],
+                    'required_columns' => [
+                        'wallet_type', 'currency', 'credited_amount', 'converted_amount',
+                        'credited_count', 'converted_count',
+                    ],
+                    'validation_rules' => [
+                        'max_size_kb' => 51200,
+                        'profile' => 'bonus_summary',
+                    ],
+                    'display_order' => 20,
                 ],
-                'display_order' => 10,
-            ]],
+            ],
         ],
         [
             'code' => 'cash_operations_dashboard',

@@ -109,6 +109,9 @@ final class GenerateRegistrationDashboard implements ShouldQueue
         if (! $isOverall) {
             $payload['input_path'] = $this->enginePath($input->stored_path);
         }
+        if ($isPayments && ($bonusSummary = $generation->files->firstWhere('input_key', 'bonus_summary'))) {
+            $payload['bonus_summary_path'] = $this->enginePath($bonusSummary->stored_path);
+        }
         if ($isPlayerActivity) {
             unset($payload['input_path']);
             $payload['input_paths'] = [

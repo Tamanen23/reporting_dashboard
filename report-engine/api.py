@@ -71,6 +71,7 @@ class PaymentsRules(BaseModel):
 
 class PaymentsRequest(BaseModel):
     input_path: Path
+    bonus_summary_path: Path | None = None
     work_directory: Path
     report_date: date
     reporting_period_start: date
@@ -173,7 +174,10 @@ def generate_registration(request: RegistrationRequest) -> dict[str, str]:
 
 @app.post("/v1/deposits-withdrawals-bonus/generate")
 def generate_payments(request: PaymentsRequest) -> dict[str, str]:
-    for path in (request.input_path, request.work_directory):
+    paths = [request.input_path, request.work_directory]
+    if request.bonus_summary_path is not None:
+        paths.append(request.bonus_summary_path)
+    for path in paths:
         if not path.is_absolute() or "/reports" not in str(path):
             raise HTTPException(status_code=400, detail="Paths must be inside /reports.")
     try:
@@ -199,6 +203,7 @@ def generate_payments(request: PaymentsRequest) -> dict[str, str]:
         ).run(
             request.input_path,
             request.work_directory,
+            bonus_summary_path=request.bonus_summary_path,
             report_date=request.report_date,
             reporting_period_start=request.reporting_period_start,
             reporting_period_end=request.reporting_period_end,

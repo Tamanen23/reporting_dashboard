@@ -33,6 +33,15 @@ final class XlsxHeaderInspector
         'status' => ['status'],
     ];
 
+    private const BONUS_SUMMARY_ALIASES = [
+        'wallet_type' => ['wallet type'],
+        'currency' => ['currency'],
+        'credited_amount' => ['sum in', 'total bonus credited', 'credited amount'],
+        'converted_amount' => ['sum out', 'bonus converted to real', 'converted amount'],
+        'credited_count' => ['count in', 'credited count'],
+        'converted_count' => ['count out', 'converted count'],
+    ];
+
     private const CASH_OPERATIONS_ALIASES = [
         'bet_id' => ['slip #'],
         'transaction_date' => ['date & time'],
@@ -175,6 +184,7 @@ final class XlsxHeaderInspector
         }
         $aliasesByCanonical = match ($profile) {
             'deposits_withdrawals_bonus_dashboard' => self::PAYMENT_ALIASES,
+            'bonus_summary' => self::BONUS_SUMMARY_ALIASES,
             'cash_operations_dashboard' => self::CASH_OPERATIONS_ALIASES,
             'player_activity_retention_dashboard' => self::PLAYER_ACTIVITY_ALIASES,
             default => self::ALIASES,

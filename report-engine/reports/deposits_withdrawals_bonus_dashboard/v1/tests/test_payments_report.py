@@ -3,8 +3,10 @@ from datetime import date
 from decimal import Decimal
 
 import pandas as pd
+import pytest
 from openpyxl import Workbook
 
+from core.exceptions import InputValidationError
 from reports.deposits_withdrawals_bonus_dashboard.v1.config import PaymentsConfig
 from reports.deposits_withdrawals_bonus_dashboard.v1.report import (
     EXPECTED_HEADERS,
@@ -111,6 +113,75 @@ def test_csv_transactions_work_without_bonus_summary(tmp_path):
     assert result["summary"]["bonus_conversion_rate"] is None
     assert result["bonus"]["available"] is False
     assert "UNAVAILABLE" in artifacts["dashboard_html"].read_text()
+
+
+def test_bonus_summary_csv_drives_bonus_results_and_reconciles_total(tmp_path):
+    transaction = dict.fromkeys(EXPECTED_HEADERS, "")
+    transaction.update({
+        "Username": "alice", "User ID": "P1", "Currency": "XAF", "Amount": 1000,
+        "Gateway": "Airtel", "Processed": "Yes", "Type": "Deposit",
+        "Processed Date": "2026-07-20", "Status": "Completed [Approved]",
+    })
+    transactions_path = tmp_path / "payments.csv"
+    pd.DataFrame([transaction]).to_csv(transactions_path, index=False)
+    bonus_path = tmp_path / "bonus.csv"
+    pd.DataFrame([
+        {
+            "Wallet Type": "Bonus | Regular", "Currency": "XAF",
+            "Sum In": 500, "Sum Out": 125, "Count In": 4, "Count Out": 1,
+        },
+        {
+            "Wallet Type": "Bonus | Casino", "Currency": "XAF",
+            "Sum In": 200, "Sum Out": 50, "Count In": 2, "Count Out": 1,
+        },
+        {
+            "Wallet Type": "Total", "Currency": "XAF",
+            "Sum In": 700, "Sum Out": 175, "Count In": 6, "Count Out": 2,
+        },
+    ]).to_csv(bonus_path, index=False)
+
+    artifacts = DepositsWithdrawalsBonusDashboardReport(
+        PaymentsConfig(
+            audit_reference_deposit_total_xaf=Decimal(1000),
+            audit_reference_daily_deposits_xaf={},
+        )
+    ).run(
+        transactions_path, tmp_path / "bonus-work", bonus_summary_path=bonus_path,
+        report_date=date(2026, 7, 22),
+        reporting_period_start=date(2026, 7, 20),
+        reporting_period_end=date(2026, 7, 22),
+        generation_uuid="bonus-csv-test", render_outputs=False,
+    )
+
+    result = json.loads(artifacts["calculated_results"].read_text())
+    assert result["summary"]["bonus_credited_amount"] == 700
+    assert result["summary"]["bonus_converted_amount"] == 175
+    assert result["summary"]["bonus_credited_count"] == 6
+    assert result["summary"]["bonus_conversion_rate"] == 25
+    assert result["bonus"]["available"] is True
+    manifest = json.loads(artifacts["manifest"].read_text())
+    assert [item["key"] for item in manifest["inputs"]] == [
+        "payment_transactions", "bonus_summary",
+    ]
+
+
+def test_bonus_summary_csv_rejects_inconsistent_total(tmp_path):
+    bonus_path = tmp_path / "bonus-mismatch.csv"
+    pd.DataFrame([
+        {
+            "Wallet Type": "Bonus | Regular", "Currency": "XAF",
+            "Sum In": 500, "Sum Out": 125, "Count In": 4, "Count Out": 1,
+        },
+        {
+            "Wallet Type": "Total", "Currency": "XAF",
+            "Sum In": 999, "Sum Out": 125, "Count In": 4, "Count Out": 1,
+        },
+    ]).to_csv(bonus_path, index=False)
+
+    with pytest.raises(InputValidationError) as error:
+        DepositsWithdrawalsBonusDashboardReport()._read_bonus_csv(bonus_path)
+
+    assert error.value.code == "BONUS_SUMMARY_TOTAL_MISMATCH"
 
 
 def test_explicit_excluded_date_is_removed_and_displayed(tmp_path):

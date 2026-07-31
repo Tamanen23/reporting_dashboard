@@ -8,7 +8,7 @@
             'registration_dataset' => ['label' => 'Registration Dataset', 'type' => 'PARQUET', 'description' => 'Validated prepared registration data'],
             'payment_dataset' => ['label' => 'Payment Transactions', 'type' => 'PARQUET', 'description' => 'Validated deposits and withdrawals'],
             'chart_overall_trends' => ['label' => 'Overall Performance Trends', 'type' => 'PNG', 'description' => 'Registration, payments and GGR daily trends'],
-            'bonus_dataset' => ['label' => 'Bonus Summary', 'type' => 'PARQUET', 'description' => 'Workbook-derived aggregate bonus data'],
+            'bonus_dataset' => ['label' => 'Bonus Summary', 'type' => 'PARQUET', 'description' => 'Source-derived aggregate bonus data'],
             'betting_dataset' => ['label' => 'Betting Dataset', 'type' => 'PARQUET', 'description' => 'Validated Cash Operations transactions'],
             'master_player_dataset' => ['label' => 'Master Player Dataset', 'type' => 'PARQUET', 'description' => 'Merged registration, payment and betting profile'],
             'crm_segment_export' => ['label' => 'CRM Segment Export', 'type' => 'CSV', 'description' => 'Player-level activity and value classifications'],
