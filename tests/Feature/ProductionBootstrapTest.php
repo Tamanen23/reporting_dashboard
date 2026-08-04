@@ -44,6 +44,7 @@ final class ProductionBootstrapTest extends TestCase
 
         $user = User::query()->where('email', 'admin@example.com')->firstOrFail();
         self::assertSame('Reporting Administrator', $user->name);
+        self::assertTrue($user->is_admin);
         self::assertTrue(Hash::check($password, $user->password));
     }
 }

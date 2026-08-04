@@ -21,7 +21,7 @@ class DatabaseSeeder extends Seeder
         if (app()->environment('local')) {
             User::query()->updateOrCreate(
                 ['email' => 'test@example.com'],
-                ['name' => 'Test User', 'password' => 'password'],
+                ['name' => 'Test User', 'password' => 'password', 'is_admin' => true],
             );
         }
 

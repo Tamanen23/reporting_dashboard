@@ -53,6 +53,7 @@ Artisan::command('app:create-admin {--name=} {--email=}', function (): int {
         'email' => $email,
         'password' => $password,
         'email_verified_at' => now(),
+        'is_admin' => true,
     ]);
     $this->info("Administrator {$email} created.");
 
