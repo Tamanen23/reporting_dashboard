@@ -87,6 +87,7 @@ class CashOperationsRequest(BaseModel):
     report_date: date
     reporting_period_start: date
     reporting_period_end: date
+    excluded_dates: list[date] = Field(default_factory=list)
     generation_uuid: str
 
 
