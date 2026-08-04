@@ -75,11 +75,11 @@ def test_player_activity_accepts_three_csv_sources(tmp_path):
     payment_path = tmp_path / "payments.csv"
     bet_path = tmp_path / "bets.csv"
     pd.DataFrame([
-        ["P1", "Alice", "2026-06-11", "Yes", "No", "No"],
-    ], columns=USER_HEADERS).to_csv(user_path, index=False)
+        ["P1", "Alice", "11/06/26 08:30:00", "Yes", "No", "No"],
+    ], columns=["ID", "User", "Registered At", "Reg. finished", "Disabled", "Deleted"]).to_csv(user_path, index=False)
     pd.DataFrame([
-        ["Alice", "P1", 1000, "Airtel", "Yes", "Deposit", "2026-06-12", "Completed [Approved]"],
-    ], columns=PAYMENT_HEADERS).to_csv(payment_path, index=False)
+        ["Alice", "P1", 1000, "Airtel", "Yes", "Deposit", "12/06/26 09:45:00", "Completed [Approved]"],
+    ], columns=["Username", "User ID", "Amount", "Gateway", "Processed", "Type", "Processed at", "Status"]).to_csv(payment_path, index=False)
     pd.DataFrame([
         ["S1", "P1", "Alice", "2026-07-20", "Lost", "Lost", "Sports", 100],
     ], columns=BET_LEGS_HEADERS).to_csv(bet_path, index=False)

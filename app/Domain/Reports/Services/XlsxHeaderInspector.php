@@ -57,7 +57,7 @@ final class XlsxHeaderInspector
     private const PLAYER_ACTIVITY_ALIASES = [
         'player_id' => ['id', 'user id', 'user #'],
         'username' => ['user', 'username', 'user name'],
-        'registration_date' => ['registered date'],
+        'registration_date' => ['registered date', 'registered at'],
         'registration_completed' => ['reg finished'],
         'disabled_status' => ['disabled'],
         'deleted_status' => ['deleted'],
@@ -65,7 +65,7 @@ final class XlsxHeaderInspector
         'gateway' => ['gateway'],
         'processed' => ['processed'],
         'transaction_type' => ['type'],
-        'transaction_date' => ['processed date', 'date & time'],
+        'transaction_date' => ['processed date', 'processed at', 'date & time'],
         'status' => ['status'],
         'bet_id' => ['slip #'],
         'cash_amount' => ['cash amount'],

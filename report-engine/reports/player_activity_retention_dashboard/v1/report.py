@@ -25,6 +25,10 @@ VERSION = "1.0.0-provisional.5"
 USER_HEADERS = ["ID", "User", "Registered Date", "Reg. finished", "Disabled", "Deleted"]
 PAYMENT_HEADERS = ["Username", "User ID", "Amount", "Gateway", "Processed", "Type", "Processed Date", "Status"]
 BET_LEGS_HEADERS = ["Slip #", "User #", "User Name", "Issue Time", "Slip State", "Bet Status", "Game", "Stake"]
+CSV_HEADER_ALIASES = {
+    "Processed at": "Processed Date",
+    "Registered At": "Registered Date",
+}
 
 
 class PlayerActivityRetentionDashboardReport(BaseReport):
@@ -191,7 +195,7 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
     def _headers(self, path: Path, sheet: str, required: list[str]) -> None:
         if path.suffix.casefold() == ".csv":
             headers = [
-                "Processed Date" if str(value).strip() == "Processed at" else str(value).strip()
+                CSV_HEADER_ALIASES.get(str(value).strip(), str(value).strip())
                 for value in read_table(path).columns
             ]
             missing = [value for value in required if value not in headers]
@@ -210,7 +214,7 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
     def _read_users(self, path: Path, effective_end: date) -> tuple[pd.DataFrame, list[dict]]:
         self._headers(path, self.config.user_worksheet, USER_HEADERS)
         frame = read_table(path, sheet_name=self.config.user_worksheet)
-        frame = frame.rename(columns={"ID": "player_id", "User": "username", "Registered Date": "registration_date", "Reg. finished": "registration_completed", "Disabled": "disabled", "Deleted": "deleted"})
+        frame = frame.rename(columns={"ID": "player_id", "User": "username", "Registered Date": "registration_date", "Registered At": "registration_date", "Reg. finished": "registration_completed", "Disabled": "disabled", "Deleted": "deleted"})
         issues = []
         blank = frame.player_id.isna() | frame.player_id.astype(str).str.strip().str.casefold().isin({"", "nan", "none", "null"})
         for row in frame.index[blank]: issues.append({"source": "user_list", "row": int(row) + 2, "code": "BLANK_PLAYER_ID"})

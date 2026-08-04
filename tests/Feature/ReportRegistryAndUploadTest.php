@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Domain\Reports\Contracts\ReportDefinitionRegistry;
 use App\Domain\Reports\Models\ReportDefinition;
 use App\Domain\Reports\Models\ReportGeneration;
+use App\Domain\Reports\Services\XlsxHeaderInspector;
 use App\Jobs\Reports\GenerateRegistrationDashboard;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -143,6 +144,42 @@ final class ReportRegistryAndUploadTest extends TestCase
         self::assertStringEndsWith('.csv', $file->stored_filename);
         Storage::disk('local')->assertExists($file->stored_path);
         Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
+    }
+
+    public function test_player_activity_user_csv_maps_registered_at_to_registration_date(): void
+    {
+        $csv = implode("\n", [
+            'ID,User,Email,Registered At,Reg. finished,Disabled,Deleted',
+            'P001,Alice,alice@example.com,11/06/26 08:30:00,Yes,No,No',
+        ]);
+        $upload = UploadedFile::fake()->createWithContent('User List.csv', $csv);
+
+        $structure = app(XlsxHeaderInspector::class)->inspect(
+            $upload->getRealPath(),
+            ['player_id', 'username', 'registration_date', 'registration_completed', 'disabled_status', 'deleted_status'],
+            profile: 'player_activity_retention_dashboard',
+            extension: 'csv',
+        );
+
+        self::assertSame('Registered At', $structure['mapping']['registration_date']);
+    }
+
+    public function test_player_activity_payment_csv_maps_processed_at_to_transaction_date(): void
+    {
+        $csv = implode("\n", [
+            'Username,User ID,Amount,Gateway,Processed,Type,Processed at,Status',
+            'Alice,P001,1000,Airtel,Yes,Deposit,12/06/26 09:45:00,Completed [Approved]',
+        ]);
+        $upload = UploadedFile::fake()->createWithContent('Deposits and Withdrawals.csv', $csv);
+
+        $structure = app(XlsxHeaderInspector::class)->inspect(
+            $upload->getRealPath(),
+            ['username', 'player_id', 'amount', 'gateway', 'processed', 'transaction_type', 'transaction_date', 'status'],
+            profile: 'player_activity_retention_dashboard',
+            extension: 'csv',
+        );
+
+        self::assertSame('Processed at', $structure['mapping']['transaction_date']);
     }
 
     public function test_payment_and_bonus_csv_files_are_stored_and_queued(): void
