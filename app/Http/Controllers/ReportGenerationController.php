@@ -150,7 +150,7 @@ final class ReportGenerationController extends Controller
                 if ($overallSnapshots->has($snapshotId)) {
                     continue;
                 }
-                $displayedEnd = date('Y-m-d', strtotime($player['period_end'].' -1 day'));
+                $displayedEnd = $player['period_end'];
                 $generations = [
                     'registration_results' => $registration['uuid'],
                     'payment_bonus_results' => $payments['uuid'],

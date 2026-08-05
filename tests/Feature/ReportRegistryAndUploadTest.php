@@ -334,6 +334,63 @@ final class ReportRegistryAndUploadTest extends TestCase
             ->assertDontSee('output_verification');
     }
 
+    public function test_overall_snapshot_keeps_the_actual_completed_period_end(): void
+    {
+        $user = User::factory()->create();
+        $hashes = [
+            'user_list' => str_repeat('a', 64),
+            'payment_transactions' => str_repeat('b', 64),
+            'bet_legs' => str_repeat('c', 64),
+            'cash_operations' => str_repeat('d', 64),
+        ];
+        $sources = [
+            'registration_dashboard' => ['user_list'],
+            'deposits_withdrawals_bonus_dashboard' => ['payment_transactions'],
+            'cash_operations_dashboard' => ['cash_operations'],
+            'player_activity_retention_dashboard' => ['user_list', 'payment_transactions', 'bet_legs'],
+        ];
+
+        foreach ($sources as $code => $inputKeys) {
+            $definition = ReportDefinition::query()->where('code', $code)->firstOrFail();
+            $generation = ReportGeneration::query()->create([
+                'uuid' => fake()->uuid(),
+                'report_definition_id' => $definition->id,
+                'user_id' => $user->id,
+                'reporting_date' => '2026-08-04',
+                'reporting_period_start' => '2026-06-11',
+                'reporting_period_end' => '2026-08-03',
+                'status' => 'completed',
+                'progress_percentage' => 100,
+                'definition_version' => $definition->definition_version,
+                'calculation_version' => $definition->calculation_version,
+                'template_version' => $definition->template_version,
+                'application_version' => 'test',
+                'input_fingerprint' => hash('sha256', $code),
+                'completed_at' => now()->subDay(),
+            ]);
+            foreach ($inputKeys as $inputKey) {
+                $generation->files()->create([
+                    'input_key' => $inputKey,
+                    'original_filename' => $inputKey.'.csv',
+                    'stored_filename' => $inputKey.'.csv',
+                    'storage_disk' => 'local',
+                    'stored_path' => 'reports/'.$generation->uuid.'/'.$inputKey.'.csv',
+                    'mime_type' => 'text/csv',
+                    'extension' => 'csv',
+                    'size_bytes' => 100,
+                    'sha256_checksum' => $hashes[$inputKey],
+                ]);
+            }
+        }
+
+        $this->travelTo(now()->addDay());
+
+        $this->actingAs($user)->get(route('reports.create'))
+            ->assertOk()
+            ->assertSee('"displayed_end":"2026-08-03"', false)
+            ->assertDontSee('"displayed_end":"2026-08-02"', false);
+    }
+
     private function payload(UploadedFile $workbook): array
     {
         return [
