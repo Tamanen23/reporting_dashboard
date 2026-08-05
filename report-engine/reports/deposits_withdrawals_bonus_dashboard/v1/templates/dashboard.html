@@ -8,13 +8,15 @@
     @font-face{font-family:DashboardNarrow;src:url('{{ font_uri }}')}@font-face{font-family:DashboardNarrow;src:url('{{ font_bold_uri }}');font-weight:700}
     html,body{font-family:DashboardNarrow,Arial,sans-serif}
     h1,h2,h3,.card b,.card strong,.brand b{font-family:DashboardNarrow,Arial,sans-serif;font-weight:700;letter-spacing:.4px}
-    .title h1{font-size:29px;white-space:nowrap}.title p{font-size:19px}
+    header{grid-template-columns:325px minmax(0,1fr) 180px 265px;gap:10px}header>*{min-width:0}
+    .title h1{font-size:28px;white-space:nowrap}.title p{font-size:18px}
     .date-box strong{display:flex;align-items:center;gap:9px}.date-box strong i{font-style:normal;font-size:25px}
+    .date-box{min-width:0;overflow:hidden;padding-left:12px;padding-right:12px}.date-box.period span{margin-left:0;text-align:center;font-size:14px;line-height:1.15;white-space:normal}.date-box.period small{margin-left:0;text-align:center;font-size:11px;line-height:1.1}
     .dashboard{overflow:hidden}.cards{grid-template-columns:repeat(6,minmax(0,1fr))}
     .card{min-width:0;overflow:hidden;display:grid;grid-template-columns:58px minmax(0,1fr);align-items:center;padding:10px 5px;text-align:center}
     .card>div:last-child{min-width:0}.card-icon{font-size:58px;line-height:1;font-family:Arial,sans-serif;font-weight:700}
     .card h3{font-family:DashboardNarrow,Arial,sans-serif;font-weight:700;font-size:15px}
-    .card b{font-size:35px}.card strong{font-size:23px;white-space:nowrap}.card p{font-size:16px}
+    .card b{font-size:34px}.card strong{font-size:21px;white-space:nowrap}.card p{font-size:15px}
     .lime .card-icon,.lime h3,.lime strong{color:#e3ad12}
   </style>
   <title>Deposits, Withdrawals &amp; Bonus Dashboard</title>
