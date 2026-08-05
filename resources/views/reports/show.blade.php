@@ -11,7 +11,7 @@
             'bonus_dataset' => ['label' => 'Bonus Summary', 'type' => 'PARQUET', 'description' => 'Source-derived aggregate bonus data'],
             'betting_dataset' => ['label' => 'Betting Dataset', 'type' => 'PARQUET', 'description' => 'Validated Cash Operations transactions'],
             'master_player_dataset' => ['label' => 'Master Player Dataset', 'type' => 'PARQUET', 'description' => 'Merged registration, payment and betting profile'],
-            'crm_segment_export' => ['label' => 'CRM Segment Export', 'type' => 'CSV', 'description' => 'Player-level activity and value classifications'],
+            'crm_segment_export' => ['label' => 'Player Classification & CRM Targets', 'type' => 'CSV', 'description' => 'Player-level active, regular, highly engaged, VIP and CRM-target flags'],
             'reconciliation_report' => ['label' => 'Reconciliation Report', 'type' => 'JSON', 'description' => 'Calculation integrity checks'],
             'validation_log' => ['label' => 'Validation Log', 'type' => 'JSON', 'description' => 'Excluded records and validation reasons'],
             'manifest' => ['label' => 'Report Manifest', 'type' => 'JSON', 'description' => 'Versions, checksums and provenance'],

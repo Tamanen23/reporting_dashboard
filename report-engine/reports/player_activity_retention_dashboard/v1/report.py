@@ -71,8 +71,42 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
 
         master_path = work_directory / "prepared" / "master-player-dataset.parquet"
         master.to_parquet(master_path, index=False)
-        crm_path = work_directory / "prepared" / "crm-segment-export.csv"
-        master[["player_id", "username", "activity_segment", "value_segment", "last_activity_date"]].to_csv(crm_path, index=False)
+        crm_path = work_directory / "prepared" / "player-classification-and-crm-targets.csv"
+        crm_columns = [
+            "player_id",
+            "username",
+            "player_classification",
+            "active_last_7_days",
+            "regular_player_5_plus_days",
+            "highly_engaged_10_plus_days",
+            "vip_player",
+            "crm_target",
+            "priority_crm_target",
+            "crm_target_reason",
+            "activity_segment",
+            "value_segment",
+            "distinct_betting_days",
+            "bet_count",
+            "stake",
+            "last_bet_date",
+            "deposit_count",
+            "deposit_amount",
+            "last_deposit_date",
+            "last_activity_date",
+            "excluded_from_kpis",
+        ]
+        crm_export = master[crm_columns].copy()
+        for column in (
+            "active_last_7_days",
+            "regular_player_5_plus_days",
+            "highly_engaged_10_plus_days",
+            "vip_player",
+            "crm_target",
+            "priority_crm_target",
+            "excluded_from_kpis",
+        ):
+            crm_export[column] = crm_export[column].map({True: "Yes", False: "No"})
+        crm_export.to_csv(crm_path, index=False, date_format="%Y-%m-%d")
         validation = {
             "report_code": "player_activity_retention_dashboard",
             "source_rows": {
@@ -392,6 +426,49 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         master.loc[ranked.iloc[vip_end:high_end].index, "value_segment"] = "high_value"
         master.loc[ranked.iloc[high_end:regular_end].index, "value_segment"] = "regular_value"
         master.loc[ranked.iloc[regular_end:standard_end].index, "value_segment"] = "standard"
+        active_last_7_start = end - timedelta(days=6)
+        active_last_7_ids = set(
+            bets[bets.bet_date.dt.date.between(active_last_7_start, end)].player_id
+        )
+        master["active_last_7_days"] = master.player_id.isin(active_last_7_ids) & ~master.excluded
+        master["regular_player_5_plus_days"] = master.distinct_betting_days.ge(5) & ~master.excluded
+        master["highly_engaged_10_plus_days"] = master.distinct_betting_days.ge(10) & ~master.excluded
+        master["vip_player"] = master.value_segment.eq("vip") & ~master.excluded
+        master["crm_target"] = (
+            master.activity_segment.isin(
+                ["dormant_player", "deposited_never_bet", "one_time_player"]
+            )
+            & ~master.excluded
+        )
+        master["priority_crm_target"] = master.crm_target
+        master["crm_target_reason"] = ""
+        master.loc[
+            master.activity_segment.eq("dormant_player") & master.crm_target,
+            "crm_target_reason",
+        ] = "Dormant player"
+        master.loc[
+            master.activity_segment.eq("deposited_never_bet") & master.crm_target,
+            "crm_target_reason",
+        ] = "Deposited but never bet"
+        master.loc[
+            master.activity_segment.eq("one_time_player") & master.crm_target,
+            "crm_target_reason",
+        ] = "One-time player"
+        master["excluded_from_kpis"] = master.excluded
+
+        classification_flags = [
+            ("active_last_7_days", "Active"),
+            ("regular_player_5_plus_days", "Regular"),
+            ("highly_engaged_10_plus_days", "Highly Engaged"),
+            ("vip_player", "VIP"),
+        ]
+        master["player_classification"] = master.apply(
+            lambda row: " | ".join(
+                label for column, label in classification_flags if bool(row[column])
+            )
+            or "Other",
+            axis=1,
+        )
         period_bets = bets[bets.bet_date.dt.date.between(start, end)]
         active_ids = set(period_bets.player_id)
         master["active_in_period"] = master.player_id.isin(active_ids)
@@ -409,8 +486,7 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
             "excluded_or_incomplete": "Excluded / Incomplete",
         }
         segment_rows = [{"key": key, "label": labels[key], "count": int(segments.get(key, 0)), "percentage": round(segments.get(key, 0) / len(master) * 100, 1) if len(master) else 0} for key in labels]
-        last7_start = end - timedelta(days=6)
-        active7 = bets[bets.bet_date.dt.date.between(last7_start, end)].player_id.nunique()
+        active7 = int(master.active_last_7_days.sum())
         latest_bet_date = min(end, bets.bet_date.max().date()) if len(bets) else end
         yesterday_date = latest_bet_date - timedelta(days=1)
         today = set(bets[bets.bet_date.dt.date.eq(latest_bet_date)].player_id)
@@ -419,7 +495,7 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         returning_rate = played_both / len(today) * 100 if today else 0
         playing = master[master.bet_count.gt(0) & ~master.excluded]
         avg_days = float(playing.distinct_betting_days.mean()) if len(playing) else 0
-        vip = master[master.value_segment.eq("vip")]
+        vip = master[master.vip_player]
         gap_values = []
         for _, player_bets in bets.groupby("player_id"):
             dates = sorted(set(player_bets.bet_date.dt.normalize()))
@@ -436,21 +512,19 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         for item in frequency:
             item["percentage"] = round(item["count"] / len(master) * 100, 1) if len(master) else 0
         placed_first_bet = int((master.bet_count.gt(0) & ~master.excluded).sum())
-        regular_players = int((master.distinct_betting_days.ge(5) & ~master.excluded).sum())
+        regular_players = int(master.regular_player_5_plus_days.sum())
         dormant_30 = int((master.bet_count.gt(0) & master.last_bet_date.lt(pd.Timestamp(end - timedelta(days=30))) & ~master.excluded).sum())
         dormant_60 = int((master.bet_count.gt(0) & master.last_bet_date.lt(pd.Timestamp(end - timedelta(days=60))) & ~master.excluded).sum())
         deposited_never_bet = int((master.deposit_count.gt(0) & master.bet_count.eq(0) & ~master.excluded).sum())
         one_time = int((master.distinct_betting_days.eq(1) & ~master.excluded).sum())
-        priority_mask = (
-            master.activity_segment.isin(["dormant_player", "deposited_never_bet", "one_time_player"])
-            & ~master.excluded
-        )
+        priority_mask = master.crm_target
         priority_targets = int(priority_mask.sum())
         reconciliation = [
             {"name": "one_player_per_master_row", "passed": master.player_id.is_unique, "actual": len(master), "expected": master.player_id.nunique()},
             {"name": "activity_segments_equal_master_players", "passed": sum(row["count"] for row in segment_rows) == len(master), "actual": sum(row["count"] for row in segment_rows), "expected": len(master)},
             {"name": "excluded_test_accounts_not_in_crm_segments", "passed": not master[master.test_flag].activity_segment.ne("excluded_or_incomplete").any(), "actual": int(master.test_flag.sum()), "expected": int(master.test_flag.sum())},
             {"name": "active_players_not_above_valid_players", "passed": int(active7) <= len(master), "actual": int(active7), "expected": len(master)},
+            {"name": "crm_export_flags_reconcile", "passed": int(master.crm_target.sum()) == priority_targets, "actual": int(master.crm_target.sum()), "expected": priority_targets},
         ]
         warnings = [{
             "code": "PROVISIONAL_PLAYER_ACTIVITY_RULES",
@@ -478,8 +552,8 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
             "depositors": int(master.deposit_count.gt(0).sum()),
             "active_players_last_7_days": int(active7),
             "placed_first_bet": placed_first_bet,
-            "regular_players_5_plus_days": regular_players,
-            "highly_engaged_10_plus_days": int((master.distinct_betting_days.ge(10) & ~master.excluded).sum()),
+            "regular_players_5_plus_days": int(master.regular_player_5_plus_days.sum()),
+            "highly_engaged_10_plus_days": int(master.highly_engaged_10_plus_days.sum()),
             "vip_players": len(vip),
             "valid_players": len(valid),
         }

@@ -68,6 +68,23 @@ def test_player_activity_builds_mutually_exclusive_master_dataset(tmp_path):
     assert "EXCLUDING" not in artifacts["dashboard_html"].read_text()
     assert artifacts["master_player_dataset"].exists()
     assert artifacts["crm_segment_export"].exists()
+    crm = pd.read_csv(artifacts["crm_segment_export"], dtype={"player_id": str})
+    assert list(crm.player_id) == ["P1", "P2"]
+    assert {
+        "player_classification",
+        "active_last_7_days",
+        "regular_player_5_plus_days",
+        "highly_engaged_10_plus_days",
+        "vip_player",
+        "crm_target",
+        "priority_crm_target",
+        "crm_target_reason",
+    }.issubset(crm.columns)
+    assert crm.loc[crm.player_id == "P1", "active_last_7_days"].item() == "Yes"
+    assert crm.loc[crm.player_id == "P2", "crm_target"].item() == "Yes"
+    assert crm.loc[crm.player_id == "P2", "priority_crm_target"].item() == "Yes"
+    assert crm.loc[crm.player_id == "P1", "priority_crm_target"].item() == "No"
+    assert crm.loc[crm.player_id == "P2", "crm_target_reason"].item() == "Deposited but never bet"
 
 
 def test_player_activity_accepts_three_csv_sources(tmp_path):
