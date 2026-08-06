@@ -564,12 +564,17 @@ final class ReportGenerationController extends Controller
                 ]);
             }
         }
-        $snapshotId = hash('sha256', implode('|', [
+        $snapshotHashes = [
             $registration->files->firstWhere('input_key', 'user_list')->sha256_checksum,
             $payments->files->firstWhere('input_key', 'payment_transactions')->sha256_checksum,
             $playerActivity->files->firstWhere('input_key', 'bet_legs')->sha256_checksum,
             $selectedGenerations['cash_operations_results']->files->firstWhere('input_key', 'cash_operations')->sha256_checksum,
-        ]));
+        ];
+        $paymentBonusFile = $payments->files->firstWhere('input_key', 'bonus_summary');
+        if ($paymentBonusFile) {
+            $snapshotHashes[] = $paymentBonusFile->sha256_checksum;
+        }
+        $snapshotId = hash('sha256', implode('|', $snapshotHashes));
         if (! $request->filled('source_snapshot') || ! hash_equals($snapshotId, (string) $request->input('source_snapshot'))) {
             throw ValidationException::withMessages(['source_snapshot' => 'The selected snapshot identity is invalid or no longer matches its source files.']);
         }
