@@ -15,7 +15,7 @@ from pypdf import PdfReader
 from core.contracts import BaseReport
 from core.exceptions import InputValidationError
 
-VERSION = "1.0.0-provisional.4"
+VERSION = "1.0.0-provisional.5"
 
 
 class OverallPerformanceDashboardReport(BaseReport):
@@ -52,6 +52,7 @@ class OverallPerformanceDashboardReport(BaseReport):
         pay = source["payment_bonus_results"]
         cash = source["cash_operations_results"]
         player = source["player_activity_results"]
+        bonus = self._normalize_bonus(pay)
         summary = {
             "registrations": reg["summary"]["total_registrations"],
             "completed": reg["summary"]["completed_registrations"],
@@ -108,7 +109,7 @@ class OverallPerformanceDashboardReport(BaseReport):
             "report_code": "overall_performance_dashboard", "summary": summary, "daily": daily,
             "registration": {"rates": reg.get("rates", {}), "statistics": registration_statistics, "daily": registration_rows},
             "top_bets": top_bets, "top_payouts": top_payouts, "top_breakdowns": top_breakdowns,
-            "payment": {"summary": pay["summary"], "bonus": pay.get("bonus", {"rows": []})},
+            "payment": {"summary": pay["summary"], "bonus": bonus},
             "cash": {"summary": cash["summary"]},
             "highlights": highlights, "provenance": provenance,
             "reconciliation": reconciliation,
@@ -142,6 +143,27 @@ class OverallPerformanceDashboardReport(BaseReport):
         artifacts["manifest"] = manifest_path
         return artifacts
 
+    @staticmethod
+    def _normalize_bonus(payment: dict) -> dict:
+        raw = payment.get("bonus")
+        bonus = raw.copy() if isinstance(raw, dict) else {}
+        rows = bonus.get("rows")
+        bonus["rows"] = rows if isinstance(rows, list) else []
+        if "available" not in bonus:
+            bonus["available"] = (
+                bonus.get("credited_amount") is not None
+                or bonus.get("converted_amount") is not None
+                or bool(bonus["rows"])
+            )
+        for key in (
+            "credited_amount",
+            "converted_amount",
+            "credited_count",
+            "converted_count",
+        ):
+            bonus.setdefault(key, None)
+        return bonus
+
     def _daily(self, reg: dict, pay: dict, cash: dict) -> list[dict]:
         rows: dict[str, dict] = {}
         for row in reg.get("daily_registrations", []):
@@ -150,7 +172,7 @@ class OverallPerformanceDashboardReport(BaseReport):
             rows.setdefault(row["date"], {"date": row["date"]}).update(deposits=row["deposit_amount"], withdrawals=row["withdrawal_amount"])
         for row in cash.get("daily", []):
             rows.setdefault(row["date"], {"date": row["date"]}).update(turnover=row["bet_amount"], ggr=row["ggr"])
-        return [{**{"registrations": 0, "deposits": 0, "withdrawals": 0, "turnover": 0, "ggr": 0}, **rows[key]} for key in sorted(rows)]
+        return [{"registrations": 0, "deposits": 0, "withdrawals": 0, "turnover": 0, "ggr": 0, **rows[key]} for key in sorted(rows)]
 
     def _highest(self, daily: list[dict], key: str) -> dict:
         row = max(daily, key=lambda item: item[key], default={"date": None, key: 0})

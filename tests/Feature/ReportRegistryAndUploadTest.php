@@ -391,6 +391,91 @@ final class ReportRegistryAndUploadTest extends TestCase
             ->assertDontSee('"displayed_end":"2026-08-02"', false);
     }
 
+    public function test_overall_snapshot_with_bonus_file_passes_identity_validation(): void
+    {
+        Queue::fake();
+        $user = User::factory()->create();
+        $hashes = [
+            'user_list' => str_repeat('a', 64),
+            'payment_transactions' => str_repeat('b', 64),
+            'bet_legs' => str_repeat('c', 64),
+            'cash_operations' => str_repeat('d', 64),
+            'bonus_summary' => str_repeat('e', 64),
+        ];
+        $sources = [
+            'registration_results' => ['registration_dashboard', ['user_list']],
+            'payment_bonus_results' => [
+                'deposits_withdrawals_bonus_dashboard',
+                ['payment_transactions', 'bonus_summary'],
+            ],
+            'cash_operations_results' => ['cash_operations_dashboard', ['cash_operations']],
+            'player_activity_results' => [
+                'player_activity_retention_dashboard',
+                ['user_list', 'payment_transactions', 'bet_legs'],
+            ],
+        ];
+        $generationUuids = [];
+
+        foreach ($sources as $dependencyKey => [$code, $inputKeys]) {
+            $definition = ReportDefinition::query()->where('code', $code)->firstOrFail();
+            $generation = ReportGeneration::query()->create([
+                'uuid' => fake()->uuid(),
+                'report_definition_id' => $definition->id,
+                'user_id' => $user->id,
+                'reporting_date' => '2026-08-06',
+                'reporting_period_start' => '2026-06-11',
+                'reporting_period_end' => '2026-08-05',
+                'status' => 'completed',
+                'progress_percentage' => 100,
+                'definition_version' => $definition->definition_version,
+                'calculation_version' => $definition->calculation_version,
+                'template_version' => $definition->template_version,
+                'application_version' => 'test',
+                'input_fingerprint' => hash('sha256', $dependencyKey),
+                'completed_at' => now(),
+            ]);
+            foreach ($inputKeys as $inputKey) {
+                $generation->files()->create([
+                    'input_key' => $inputKey,
+                    'original_filename' => $inputKey.'.csv',
+                    'stored_filename' => $inputKey.'.csv',
+                    'storage_disk' => 'local',
+                    'stored_path' => 'reports/'.$generation->uuid.'/'.$inputKey.'.csv',
+                    'mime_type' => 'text/csv',
+                    'extension' => 'csv',
+                    'size_bytes' => 100,
+                    'sha256_checksum' => $hashes[$inputKey],
+                ]);
+            }
+            $generation->outputs()->create([
+                'output_type' => 'json',
+                'storage_disk' => 'local',
+                'stored_path' => 'reports/'.$generation->uuid.'/calculated-results.json',
+                'mime_type' => 'application/json',
+                'size_bytes' => 100,
+                'sha256_checksum' => hash('sha256', $generation->uuid),
+                'metadata' => ['artifact_key' => 'calculated_results'],
+            ]);
+            $generationUuids[$dependencyKey] = $generation->uuid;
+        }
+
+        $snapshotId = hash('sha256', implode('|', array_values($hashes)));
+        $response = $this->actingAs($user)->post(route('reports.store'), [
+            'report_code' => 'overall_performance_dashboard',
+            'report_date' => '2026-08-06',
+            'reporting_period_start' => '2026-06-11',
+            'reporting_period_end' => '2026-08-05',
+            'source_generations' => $generationUuids,
+            'source_snapshot' => $snapshotId,
+        ]);
+
+        $response->assertSessionHasNoErrors();
+        self::assertSame(1, ReportGeneration::query()
+            ->whereHas('reportDefinition', fn ($query) => $query->where('code', 'overall_performance_dashboard'))
+            ->count());
+        Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
+    }
+
     private function payload(UploadedFile $workbook): array
     {
         return [
