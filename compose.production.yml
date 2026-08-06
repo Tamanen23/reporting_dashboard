@@ -46,6 +46,7 @@ x-service-defaults: &service-defaults
 services:
   app:
     <<: *service-defaults
+    pull_policy: build
     build:
       context: .
       dockerfile: docker/php/Dockerfile.production
@@ -68,6 +69,7 @@ services:
 
   nginx:
     <<: *service-defaults
+    pull_policy: build
     build:
       context: .
       dockerfile: docker/nginx/Dockerfile.production
@@ -81,6 +83,7 @@ services:
 
   queue-worker:
     <<: *service-defaults
+    pull_policy: build
     build:
       context: .
       dockerfile: docker/php/Dockerfile.production
@@ -111,6 +114,7 @@ services:
 
   scheduler:
     <<: *service-defaults
+    pull_policy: build
     build:
       context: .
       dockerfile: docker/php/Dockerfile.production
@@ -128,6 +132,7 @@ services:
 
   report-engine:
     <<: *service-defaults
+    pull_policy: build
     build:
       context: .
       dockerfile: docker/report-engine/Dockerfile.production
