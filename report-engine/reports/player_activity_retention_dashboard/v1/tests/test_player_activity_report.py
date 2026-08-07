@@ -27,11 +27,13 @@ def test_player_activity_builds_mutually_exclusive_master_dataset(tmp_path):
     payment_path = tmp_path / "payments.xlsx"
     bet_legs_path = tmp_path / "bet-legs.xlsx"
     _workbook(user_path, "User List-28", USER_HEADERS, [
+        ["P0", "Before Period", date(2026, 6, 10), "Yes", "No", "No"],
         ["P1", "Alice", date(2026, 6, 11), "Yes", "No", "No"],
         ["P2", "Bob", date(2026, 6, 12), "Yes", "No", "No"],
         ["P3", "Test Account", date(2026, 6, 13), "Yes", "No", "No"],
     ])
     _workbook(payment_path, "Deposits & Withdrawals-26", PAYMENT_HEADERS, [
+        ["Before Period", "P0", 2000, "Airtel", "Yes", "Deposit", date(2026, 6, 12), "Completed [Approved]"],
         ["Alice", "P1", 1000, "Airtel", "Yes", "Deposit", date(2026, 6, 12), "Completed [Approved]"],
         ["Bob", "P2", 500, "MomoMTN", "Yes", "Deposit", date(2026, 6, 13), "Completed [Approved]"],
     ])
@@ -40,6 +42,7 @@ def test_player_activity_builds_mutually_exclusive_master_dataset(tmp_path):
         "Bet Legs Report-6",
         BET_LEGS_HEADERS,
         [
+            ["S0", "P0", "Before Period", date(2026, 7, 20), "Lost", "Lost", "Sports", 500],
             ["S1", "P1", "Alice", date(2026, 7, 20), "Lost", "Lost", "Sports", 100],
             ["S2", "P1", "Alice", date(2026, 7, 21), "Winner - Paid Out", "Won", "Pragmatic", 200],
         ],
@@ -70,6 +73,10 @@ def test_player_activity_builds_mutually_exclusive_master_dataset(tmp_path):
     assert artifacts["crm_segment_export"].exists()
     crm = pd.read_csv(artifacts["crm_segment_export"], dtype={"player_id": str})
     assert list(crm.player_id) == ["P1", "P2"]
+    assert any(
+        issue["code"] == "OUTSIDE_REPORTING_PERIOD" and issue["count"] == 1
+        for issue in json.loads(artifacts["validation_log"].read_text())["issues"]
+    )
     assert {
         "player_classification",
         "active_last_7_days",

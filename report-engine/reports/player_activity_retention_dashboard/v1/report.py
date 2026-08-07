@@ -58,7 +58,9 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
             (work_directory / name).mkdir(parents=True, exist_ok=True)
 
         effective_end = reporting_period_end
-        users, user_issues = self._read_users(input_paths["user_list"], effective_end)
+        users, user_issues = self._read_users(
+            input_paths["user_list"], reporting_period_start, effective_end
+        )
         payments, payment_issues = self._read_payments(input_paths["payment_transactions"], effective_end)
         bets, bet_issues = self._read_bets(input_paths["bet_legs"], effective_end)
         source_coverage = self._source_coverage(users, payments, bets, effective_end)
@@ -245,7 +247,9 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         if missing:
             raise InputValidationError("A Player Activity source workbook has missing columns.", code="HEADERS_INVALID", context={"sheet": sheet, "missing": missing})
 
-    def _read_users(self, path: Path, effective_end: date) -> tuple[pd.DataFrame, list[dict]]:
+    def _read_users(
+        self, path: Path, effective_start: date, effective_end: date
+    ) -> tuple[pd.DataFrame, list[dict]]:
         self._headers(path, self.config.user_worksheet, USER_HEADERS)
         frame = read_table(path, sheet_name=self.config.user_worksheet)
         frame = frame.rename(columns={"ID": "player_id", "User": "username", "Registered Date": "registration_date", "Registered At": "registration_date", "Reg. finished": "registration_completed", "Disabled": "disabled", "Deleted": "deleted"})
@@ -260,7 +264,14 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         frame["registration_date"] = parse_datetime(
             frame.registration_date, csv_source=path.suffix.casefold() == ".csv"
         ).dt.normalize()
-        frame = frame[frame.registration_date.dt.date <= effective_end].copy()
+        in_period = frame.registration_date.dt.date.between(effective_start, effective_end)
+        if (~in_period).any():
+            issues.append({
+                "source": "user_list",
+                "code": "OUTSIDE_REPORTING_PERIOD",
+                "count": int((~in_period).sum()),
+            })
+        frame = frame[in_period].copy()
         frame["completed"] = frame.registration_completed.astype(str).str.strip().str.casefold().isin(self.config.completed_values)
         frame["disabled_flag"] = frame.disabled.astype(str).str.strip().str.casefold().eq("yes")
         frame["deleted_flag"] = frame.deleted.astype(str).str.strip().str.casefold().eq("yes")
@@ -270,7 +281,9 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
             frame = frame[~frame["test_flag"]].copy()
         return frame[["player_id", "username", "registration_date", "completed", "disabled_flag", "deleted_flag", "test_flag"]], issues
 
-    def _read_users_dataset(self, path: Path, effective_end: date) -> tuple[pd.DataFrame, list[dict]]:
+    def _read_users_dataset(
+        self, path: Path, effective_start: date, effective_end: date
+    ) -> tuple[pd.DataFrame, list[dict]]:
         frame = pd.read_parquet(path)
         required = {"player_id", "username", "registration_date", "registration_completed", "is_disabled", "is_deleted"}
         missing = sorted(required - set(frame.columns))
@@ -287,9 +300,16 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         }).copy()
         frame["player_id"] = frame.player_id.astype(str).str.replace(r"\.0$", "", regex=True)
         frame["registration_date"] = pd.to_datetime(frame.registration_date, errors="coerce").dt.normalize()
-        frame = frame[frame.registration_date.dt.date <= effective_end].copy()
-        frame["test_flag"] = frame.username.astype(str).str.contains("test", case=False, na=False)
+        in_period = frame.registration_date.dt.date.between(effective_start, effective_end)
         issues = []
+        if (~in_period).any():
+            issues.append({
+                "source": "registration_dataset",
+                "code": "OUTSIDE_REPORTING_PERIOD",
+                "count": int((~in_period).sum()),
+            })
+        frame = frame[in_period].copy()
+        frame["test_flag"] = frame.username.astype(str).str.contains("test", case=False, na=False)
         if frame["test_flag"].any():
             issues.append({"source": "registration_dataset", "code": "TEST_ACCOUNTS_EXCLUDED", "count": int(frame["test_flag"].sum())})
             frame = frame[~frame["test_flag"]].copy()
