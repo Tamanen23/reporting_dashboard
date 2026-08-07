@@ -1,9 +1,12 @@
 <?php
 
 use App\Domain\Reports\Contracts\ReportDefinitionRegistry;
+use App\Domain\Reports\Models\ReportGeneration;
+use App\Domain\Reports\Services\ReportDeletionService;
 use App\Models\User;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Password;
 
@@ -17,6 +20,39 @@ Artisan::command('reports:sync', function (ReportDefinitionRegistry $registry): 
 
     return self::SUCCESS;
 })->purpose('Synchronize configured report definitions without creating users');
+
+Artisan::command('reports:backfill-dependencies', function (): int {
+    $created = 0;
+    ReportGeneration::withTrashed()
+        ->whereHas('reportDefinition', fn ($query) => $query->where('code', 'overall_performance_dashboard'))
+        ->orderBy('id')
+        ->chunkById(100, function ($reports) use (&$created): void {
+            foreach ($reports as $report) {
+                foreach (($report->processing_metadata['dependencies'] ?? []) as $key => $dependency) {
+                    $sourceId = $dependency['generation_id'] ?? null;
+                    if (! $sourceId) {
+                        continue;
+                    }
+                    $record = $report->dependencies()->firstOrCreate([
+                        'depends_on_generation_id' => $sourceId,
+                    ], ['dependency_key' => $key]);
+                    $created += $record->wasRecentlyCreated ? 1 : 0;
+                }
+            }
+        });
+    $this->info("{$created} report dependencies created.");
+
+    return self::SUCCESS;
+})->purpose('Backfill dependency records for existing Overall Performance reports');
+
+Artisan::command('reports:purge-expired', function (ReportDeletionService $service): int {
+    $count = $service->purgeExpired();
+    $this->info("{$count} expired deleted reports permanently purged.");
+
+    return self::SUCCESS;
+})->purpose('Permanently purge reports after their recycle-bin retention period');
+
+Schedule::command('reports:purge-expired')->dailyAt('02:30')->withoutOverlapping();
 
 Artisan::command('app:create-admin {--name=} {--email=}', function (): int {
     $name = trim((string) ($this->option('name') ?: $this->ask('Administrator name')));

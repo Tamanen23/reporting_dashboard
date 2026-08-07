@@ -11,10 +11,11 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 final class ReportGeneration extends Model
 {
-    use HasUuids;
+    use HasUuids, SoftDeletes;
 
     protected $guarded = [];
 
@@ -40,6 +41,7 @@ final class ReportGeneration extends Model
             'completed_at' => 'immutable_datetime',
             'failed_at' => 'immutable_datetime',
             'last_progress_at' => 'immutable_datetime',
+            'purge_after' => 'immutable_datetime',
             'processing_metadata' => 'array',
         ];
     }
@@ -67,5 +69,15 @@ final class ReportGeneration extends Model
     public function outputs(): HasMany
     {
         return $this->hasMany(ReportGenerationOutput::class);
+    }
+
+    public function dependencies(): HasMany
+    {
+        return $this->hasMany(ReportGenerationDependency::class);
+    }
+
+    public function dependents(): HasMany
+    {
+        return $this->hasMany(ReportGenerationDependency::class, 'depends_on_generation_id');
     }
 }

@@ -225,6 +225,16 @@ h2 { margin-bottom: 7px; font-size: 20px; letter-spacing: -.015em; }
 .notice.error { border-color: rgb(243 124 131 / 40%); color: #ffc2c6; background: rgb(126 29 37 / 14%); }
 .notice.success { border-color: rgb(86 201 144 / 35%); color: #a4e8c5; background: rgb(34 118 76 / 12%); }
 .notice.warning { border-color: rgb(229 184 41 / 36%); color: #ebd98b; background: rgb(122 93 17 / 13%); }
+.button.danger { background:#9f2f38; color:#fff; border-color:#c64b55; box-shadow:none; }
+.button.danger:hover { background:#b33a44; }
+.button.danger:disabled { opacity:.45; cursor:not-allowed; }
+.danger-zone { border-color:rgb(198 75 85 / 45%); }
+.danger-zone form { display:grid; gap:14px; max-width:720px; }
+.danger-zone textarea { width:100%; resize:vertical; }
+.dependency-warning { border:1px solid rgb(229 184 41 / 35%); background:rgb(122 93 17 / 12%); border-radius:10px; padding:14px 16px; margin-bottom:18px; color:#e6d18a; }
+.dependency-warning ul { margin:8px 0 0; padding-left:20px; }
+.dependency-warning a { color:var(--gold); }
+.trash-item { grid-template-columns:minmax(280px,1.5fr) minmax(190px,.8fr) minmax(210px,.8fr) auto; }
 .rule-note { display: flex; align-items: flex-start; gap: 11px; padding: 14px 16px; border: 1px solid rgb(229 184 41 / 30%); border-radius: 12px; color: #dfcf90; background: rgb(122 93 17 / 11%); font-size: 12px; line-height: 1.5; }
 .rule-note b { color: #f2cf58; }
 

@@ -4,7 +4,7 @@
         <a class="button" href="{{ route('reports.create') }}"><span aria-hidden="true">＋</span> New report</a>
     </header>
     <section class="panel">
-        <div class="history-toolbar"><div><h2>Report history</h2><p class="muted tiny">{{ $generations->total() }} {{ \Illuminate\Support\Str::plural('report', $generations->total()) }}</p></div></div>
+        <div class="history-toolbar"><div><h2>Report history</h2><p class="muted tiny">{{ $generations->total() }} {{ \Illuminate\Support\Str::plural('report', $generations->total()) }}</p></div><a class="button secondary" href="{{ route('reports.trash') }}">Recycle bin</a></div>
         <div class="history-list">
             @forelse($generations as $generation)
                 @php $statusClass = 'status-'.str($generation->status->value)->slug(); @endphp

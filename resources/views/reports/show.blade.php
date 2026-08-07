@@ -42,6 +42,11 @@
             ->sortByDesc('occurred_at')
             ->values();
         $archivedEventCount = $generation->events->count() - $timelineEvents->count();
+        $dependentReports = $generation->dependents
+            ->pluck('generation')
+            ->filter()
+            ->filter(fn ($report) => ! $report->trashed())
+            ->values();
     @endphp
 
     {{-- Superseded by the shared application design system. --}}
@@ -173,6 +178,29 @@
                 @endforeach
             </div>
         </section>
+
+        @if($generation->status->isTerminal())
+            <section class="section-card danger-zone">
+                <div class="section-head">
+                    <div><h2>Delete report</h2><p>Move this generation and its files to the recycle bin. Permanent removal occurs after 30 days.</p></div>
+                </div>
+                @if($dependentReports->isNotEmpty())
+                    <div class="dependency-warning">
+                        <strong>Used by {{ $dependentReports->count() }} Overall Performance {{ \Illuminate\Support\Str::plural('report', $dependentReports->count()) }}</strong>
+                        <ul>@foreach($dependentReports as $dependent)<li><a href="{{ route('reports.show', $dependent) }}">{{ $dependent->reportDefinition->name }} · {{ $dependent->uuid }}</a></li>@endforeach</ul>
+                    </div>
+                @endif
+                <form method="post" action="{{ route('reports.destroy', $generation) }}" onsubmit="return confirm('Move this report{{ $dependentReports->isNotEmpty() && auth()->user()->is_admin ? ' and its dependent Overall Performance reports' : '' }} to the recycle bin?')">
+                    @csrf @method('DELETE')
+                    <div class="field"><label for="deletion-reason">Reason <span class="optional">Optional</span></label><textarea id="deletion-reason" name="reason" rows="3" maxlength="1000" placeholder="Why is this report being removed?"></textarea></div>
+                    @if($dependentReports->isNotEmpty() && auth()->user()->is_admin)
+                        <label class="source-ack"><input type="checkbox" name="cascade" value="1" required> Delete this report and the {{ $dependentReports->count() }} dependent Overall Performance {{ \Illuminate\Support\Str::plural('report', $dependentReports->count()) }}.</label>
+                    @endif
+                    <button class="button danger" type="submit" @disabled($dependentReports->isNotEmpty() && ! auth()->user()->is_admin)>Move to recycle bin</button>
+                    @if($dependentReports->isNotEmpty() && ! auth()->user()->is_admin)<p class="muted tiny">Delete the dependent Overall Performance report first or contact an administrator.</p>@endif
+                </form>
+            </section>
+        @endif
     </div>
     @if(!$generation->status->isTerminal())<script>setTimeout(()=>location.reload(),4000)</script>@endif
 </x-layouts.app>

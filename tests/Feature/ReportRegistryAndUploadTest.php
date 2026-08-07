@@ -473,6 +473,11 @@ final class ReportRegistryAndUploadTest extends TestCase
         self::assertSame(1, ReportGeneration::query()
             ->whereHas('reportDefinition', fn ($query) => $query->where('code', 'overall_performance_dashboard'))
             ->count());
+        self::assertSame(4, ReportGeneration::query()
+            ->whereHas('reportDefinition', fn ($query) => $query->where('code', 'overall_performance_dashboard'))
+            ->firstOrFail()
+            ->dependencies()
+            ->count());
         Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
     }
 

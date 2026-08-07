@@ -3,7 +3,10 @@
 namespace App\Providers;
 
 use App\Domain\Reports\Contracts\ReportDefinitionRegistry;
+use App\Domain\Reports\Models\ReportGeneration;
 use App\Domain\Reports\Services\DatabaseReportDefinitionRegistry;
+use App\Policies\ReportGenerationPolicy;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -21,6 +24,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        Gate::policy(ReportGeneration::class, ReportGenerationPolicy::class);
     }
 }

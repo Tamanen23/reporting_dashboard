@@ -11,12 +11,14 @@ use App\Domain\Reports\Exceptions\WorkbookStructureException;
 use App\Domain\Reports\Models\ReportDefinition;
 use App\Domain\Reports\Models\ReportGeneration;
 use App\Domain\Reports\Models\ReportGenerationOutput;
+use App\Domain\Reports\Services\ReportDeletionService;
 use App\Domain\Reports\Services\XlsxHeaderInspector;
 use App\Http\Requests\StoreReportGenerationRequest;
 use App\Jobs\Reports\GenerateRegistrationDashboard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -330,9 +332,68 @@ final class ReportGenerationController extends Controller
     public function show(Request $request, ReportGeneration $report): View
     {
         $this->authorizeOwner($request, $report);
-        $report->load(['reportDefinition', 'files', 'events', 'outputs', 'user']);
+        $report->load([
+            'reportDefinition',
+            'files',
+            'events',
+            'outputs',
+            'user',
+            'dependents.generation.reportDefinition',
+        ]);
 
         return view('reports.show', ['generation' => $report]);
+    }
+
+    public function trash(Request $request): View
+    {
+        $query = ReportGeneration::onlyTrashed()->with(['reportDefinition', 'user']);
+        if (! $request->user()->is_admin) {
+            $query->where('user_id', $request->user()->id);
+        }
+        $generations = $query->latest('deleted_at')->paginate(20);
+
+        return view('reports.trash', compact('generations'));
+    }
+
+    public function destroy(
+        Request $request,
+        ReportGeneration $report,
+        ReportDeletionService $service,
+    ): RedirectResponse {
+        Gate::authorize('delete', $report);
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:1000'],
+            'cascade' => ['sometimes', 'boolean'],
+        ]);
+        $cascade = $request->boolean('cascade');
+        if ($cascade) {
+            Gate::authorize('cascadeDelete', $report);
+        }
+        $deleted = $service->delete(
+            $report,
+            $request->user(),
+            trim((string) ($validated['reason'] ?? '')),
+            $cascade,
+        );
+
+        return redirect()->route('reports.index')->with(
+            'success',
+            $deleted->count() === 1
+                ? 'Report moved to the recycle bin for 30 days.'
+                : "{$deleted->count()} associated reports moved to the recycle bin for 30 days.",
+        );
+    }
+
+    public function restore(
+        Request $request,
+        string $report,
+        ReportDeletionService $service,
+    ): RedirectResponse {
+        $generation = ReportGeneration::onlyTrashed()->where('uuid', $report)->firstOrFail();
+        Gate::authorize('restore', $generation);
+        $service->restore($generation);
+
+        return redirect()->route('reports.show', $generation)->with('success', 'Report restored.');
     }
 
     private function storeMultiInputReport(StoreReportGenerationRequest $request, ReportDefinition $definition, XlsxHeaderInspector $inspector): RedirectResponse
@@ -604,6 +665,12 @@ final class ReportGenerationController extends Controller
                 'processing_metadata' => ['reporting_context' => ['excluded_dates' => $excludedDates, 'overall_rules' => $definition->configuration['overall_rules'] ?? []], 'source_snapshot_id' => $snapshotId, 'dependencies' => $dependencies],
                 'last_progress_at' => now(),
             ]);
+            foreach ($dependencies as $dependencyKey => $dependency) {
+                $generation->dependencies()->create([
+                    'depends_on_generation_id' => $dependency['generation_id'],
+                    'dependency_key' => $dependencyKey,
+                ]);
+            }
             $generation->events()->create(['stage' => ProcessingStage::FileStorage, 'level' => EventLevel::Info, 'event_code' => 'DEPENDENCIES_RESOLVED', 'message' => 'Exact-period module results were resolved and checksummed.', 'context' => ['source_generation_uuids' => collect($dependencies)->pluck('generation_uuid')->all()], 'occurred_at' => now()]);
 
             return $generation;
@@ -635,6 +702,6 @@ final class ReportGenerationController extends Controller
 
     private function authorizeOwner(Request $request, ReportGeneration $generation): void
     {
-        abort_unless($generation->user_id === $request->user()->id, 403);
+        Gate::authorize('view', $generation);
     }
 }

@@ -38,8 +38,11 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/reports', [ReportGenerationController::class, 'index'])->name('reports.index');
     Route::get('/pipeline', [ReportGenerationController::class, 'pipeline'])->name('reports.pipeline');
     Route::get('/reports/create', [ReportGenerationController::class, 'create'])->name('reports.create');
+    Route::get('/reports/trash', [ReportGenerationController::class, 'trash'])->name('reports.trash');
+    Route::post('/reports/trash/{report}/restore', [ReportGenerationController::class, 'restore'])->name('reports.restore');
     Route::post('/reports', [ReportGenerationController::class, 'store'])->name('reports.store');
     Route::get('/reports/{report}', [ReportGenerationController::class, 'show'])->name('reports.show');
+    Route::delete('/reports/{report}', [ReportGenerationController::class, 'destroy'])->name('reports.destroy');
     Route::post('/reports/{report}/retry', [ReportGenerationController::class, 'retry'])->name('reports.retry');
     Route::get('/reports/{report}/outputs/{output}', [ReportGenerationController::class, 'download'])->name('reports.download');
 });
