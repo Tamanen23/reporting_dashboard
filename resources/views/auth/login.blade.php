@@ -15,6 +15,13 @@
                     <label for="password">Password</label>
                     <input id="password" name="password" type="password" autocomplete="current-password" required>
                 </div>
+                <div class="auth-options">
+                    <label class="check-option" for="remember">
+                        <input id="remember" name="remember" type="checkbox" value="1" @checked(old('remember'))>
+                        <span>Remember me</span>
+                    </label>
+                    <a href="{{ route('password.request') }}">Forgot password?</a>
+                </div>
                 <div class="actions"><button class="button" type="submit">Sign in securely <span aria-hidden="true">→</span></button></div>
             </form>
             <p class="login-help">Private system · Access is limited to authorised team members</p>

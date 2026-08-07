@@ -32,6 +32,14 @@ x-app-environment: &app-environment
   QUEUE_CONNECTION: redis
   FILESYSTEM_DISK: local
   REPORT_ENGINE_URL: http://report-engine:8000
+  MAIL_MAILER: ${MAIL_MAILER:-smtp}
+  MAIL_SCHEME: ${MAIL_SCHEME:-smtp}
+  MAIL_HOST: ${MAIL_HOST}
+  MAIL_PORT: ${MAIL_PORT:-587}
+  MAIL_USERNAME: ${MAIL_USERNAME}
+  MAIL_PASSWORD: ${MAIL_PASSWORD}
+  MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS}
+  MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Betnabiso Reporting}
 
 x-service-defaults: &service-defaults
   restart: unless-stopped

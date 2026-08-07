@@ -344,6 +344,11 @@ h2 { margin-bottom: 7px; font-size: 20px; letter-spacing: -.015em; }
 .login-brand img { width: 100%; height: 100%; object-fit: cover; }
 .login-card .actions .button { width: 100%; }
 .login-help { margin: 22px 0 0; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; text-align: center; }
+.login-help a, .auth-options a { color: var(--gold); font-weight: 700; text-decoration: none; }
+.login-help a:hover, .auth-options a:hover { text-decoration: underline; }
+.auth-options { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 15px; color: var(--muted); font-size: 12px; }
+.check-option { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; }
+.check-option input { width: 16px; height: 16px; margin: 0; accent-color: var(--gold); }
 
 nav[role=navigation] { margin-top: 22px; }
 

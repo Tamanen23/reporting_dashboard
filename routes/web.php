@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\UserInvitationController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\InvitationController;
+use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\ReportGenerationController;
 use Illuminate\Support\Facades\Route;
 
@@ -15,6 +16,16 @@ Route::middleware('guest')->group(function (): void {
     Route::post('/login', [AuthController::class, 'store'])
         ->middleware('throttle:5,1')
         ->name('login.store');
+    Route::get('/forgot-password', [PasswordResetController::class, 'request'])
+        ->name('password.request');
+    Route::post('/forgot-password', [PasswordResetController::class, 'email'])
+        ->middleware('throttle:3,1')
+        ->name('password.email');
+    Route::get('/reset-password/{token}', [PasswordResetController::class, 'reset'])
+        ->name('password.reset');
+    Route::post('/reset-password', [PasswordResetController::class, 'update'])
+        ->middleware('throttle:5,1')
+        ->name('password.update');
 });
 
 Route::get('/invitations/{token}', [InvitationController::class, 'show'])->name('invitations.show');
