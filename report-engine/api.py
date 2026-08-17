@@ -60,7 +60,7 @@ class RegistrationRequest(BaseModel):
 
 
 class PaymentsRules(BaseModel):
-    summary_scope: Literal["workbook_snapshot", "reporting_period"] = "workbook_snapshot"
+    summary_scope: Literal["reporting_period"] = "reporting_period"
     published_deposit_adjustment_xaf: float = 0
     daily_deposit_adjustments_xaf: dict[date, float] = Field(default_factory=dict)
     audit_reference_deposit_total_xaf: float = 2043435

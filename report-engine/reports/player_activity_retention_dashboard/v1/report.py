@@ -17,11 +17,12 @@ from pypdf import PdfReader
 
 from core.contracts import BaseReport
 from core.exceptions import InputValidationError
+from core.reporting_period import validate_reporting_period
 from core.tabular import parse_datetime, parse_numeric, read_table
 
 from .config import PlayerActivityConfig
 
-VERSION = "1.0.0-provisional.5"
+VERSION = "1.0.0-provisional.6"
 USER_HEADERS = ["ID", "User", "Registered Date", "Reg. finished", "Disabled", "Deleted"]
 PAYMENT_HEADERS = ["Username", "User ID", "Amount", "Gateway", "Processed", "Type", "Processed Date", "Status"]
 BET_LEGS_HEADERS = ["Slip #", "User #", "User Name", "Issue Time", "Slip State", "Bet Status", "Game", "Stake"]
@@ -46,6 +47,9 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         generation_uuid: str,
         render_outputs: bool = True,
     ) -> dict[str, Path]:
+        validate_reporting_period(
+            report_date, reporting_period_start, reporting_period_end
+        )
         required = {"user_list", "payment_transactions", "bet_legs"}
         if set(input_paths) != required:
             raise InputValidationError(
@@ -122,11 +126,16 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
                 "Dormancy is measured against the effective reporting-period end.",
                 "VIP is the top configured percentile by lifetime deposit amount.",
             ],
-            "source_discrepancy": {
-                "reference_betting_players": 767,
-                "bet_legs_betting_players": int(bets.player_id.nunique()),
-                "message": "The supplied production reference and source workbook do not contain the same betting-player population.",
-            },
+            "source_discrepancy": (
+                {
+                    "reference_betting_players": self.config.audit_reference_betting_players,
+                    "bet_legs_betting_players": int(bets.player_id.nunique()),
+                    "message": "The supplied production reference and source workbook do not contain the same betting-player population.",
+                }
+                if reporting_period_start == self.config.audit_reference_period_start
+                and reporting_period_end == self.config.audit_reference_period_end
+                else None
+            ),
         }
         validation_path = work_directory / "prepared" / "validation-log.json"
         validation_path.write_text(json.dumps(validation, indent=2, default=str), encoding="utf-8")
@@ -549,10 +558,21 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
         warnings = [{
             "code": "PROVISIONAL_PLAYER_ACTIVITY_RULES",
             "message": "Settled-bet statuses, dormancy and value thresholds require formal business approval.",
-        }, {
-            "code": "PRODUCTION_REFERENCE_POPULATION_MISMATCH",
-            "message": f"Bet Legs contains {bets.player_id.nunique()} settled betting players; the supplied production reference shows 767.",
         }]
+        if (
+            start == self.config.audit_reference_period_start
+            and end == self.config.audit_reference_period_end
+            and bets.player_id.nunique()
+            != self.config.audit_reference_betting_players
+        ):
+            warnings.append({
+                "code": "PRODUCTION_REFERENCE_POPULATION_MISMATCH",
+                "message": (
+                    f"Bet Legs contains {bets.player_id.nunique()} settled betting players; "
+                    "the supplied production reference shows "
+                    f"{self.config.audit_reference_betting_players}."
+                ),
+            })
         if latest_bet_date < end:
             warnings.append({
                 "code": "BET_LEGS_COVERAGE_INCOMPLETE",
@@ -585,6 +605,8 @@ class PlayerActivityRetentionDashboardReport(BaseReport):
             f"{len(vip):,} players are provisionally classified as VIP by lifetime deposits.",
         ]
         return {
+            "period_start": start.isoformat(),
+            "period_end": end.isoformat(),
             "report": {
                 "title": "Player Activity & Retention Dashboard",
                 "report_date": report_date.strftime("%d %B %Y"),

@@ -44,9 +44,9 @@
 
   <section class="middle">
     <div class="panel trend">
-      <h2>DEPOSITS &amp; WITHDRAWALS TREND – LAST 10 DAYS</h2>
+      <h2>DEPOSITS &amp; WITHDRAWALS TREND – {{ trend_label }}</h2>
       <img src="{{ chart_uri }}">
-      <h2 class="summary-title">LAST 10 DAYS SUMMARY ({{ datefmt(last_ten[0].date)|upper }} – {{ datefmt(last_ten[-1].date)|upper }})</h2>
+      <h2 class="summary-title">{{ trend_label }} SUMMARY ({{ datefmt(last_ten[0].date)|upper }} – {{ datefmt(last_ten[-1].date)|upper }})</h2>
       <div class="three"><div class="blue">TOTAL DEPOSITS<strong>XAF {{ fmt(last_ten_summary.deposit_amount) }}</strong></div><div class="red">TOTAL WITHDRAWALS<strong>XAF {{ fmt(last_ten_summary.withdrawal_amount) }}</strong></div><div class="{{ 'red' if last_ten_summary.net_cash_flow < 0 else 'lime' }}">NET CASH FLOW<strong>XAF {{ fmt(last_ten_summary.net_cash_flow) }}</strong></div></div>
     </div>
     <div class="right-stack">
@@ -54,7 +54,7 @@
         <div><span>↗</span><p>HIGHEST DEPOSIT DAY<small>{{ datefmt(highest_deposit_day.date) }}</small></p><strong class="lime">XAF {{ fmt(highest_deposit_day.deposit_amount) }}</strong></div>
         <div><span>↘</span><p>HIGHEST WITHDRAWAL DAY<small>{{ datefmt(highest_withdrawal_day.date) }}</small></p><strong class="red">XAF {{ fmt(highest_withdrawal_day.withdrawal_amount) }}</strong></div>
         <div><span>▰</span><p>RETAIL DEPOSITS<small>{{ fmt(summary.retail_deposit_count) }} Transactions</small></p><strong class="cyan">XAF {{ fmt(summary.retail_deposit_amount) }}</strong></div>
-        <div><span>⚖</span><p>DEPOSIT / WITHDRAWAL RATIO<small>(By Amount)</small></p><strong>XAF {{ '%.2f'|format(summary.deposit_withdrawal_ratio) }} : 1</strong></div>
+        <div><span>⚖</span><p>DEPOSIT / WITHDRAWAL RATIO<small>(By Amount)</small></p><strong>{{ '%.2f'|format(summary.deposit_withdrawal_ratio) }} : 1</strong></div>
         <div><span>%</span><p>BONUS CONVERSION RATE<small>(Converted / Credited)</small></p><strong class="purple">{% if bonus.available %}{{ pct(summary.bonus_conversion_rate) }}%{% else %}UNAVAILABLE{% endif %}</strong></div>
       </div>
     </div>

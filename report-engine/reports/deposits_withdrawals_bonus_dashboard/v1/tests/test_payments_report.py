@@ -210,6 +210,68 @@ def test_explicit_excluded_date_is_removed_and_displayed(tmp_path):
         generation_uuid="excluded-test", render_outputs=False,
     )
     result = json.loads(artifacts["calculated_results"].read_text())
+    assert result["summary"]["deposit_count"] == 1
+    assert result["summary"]["deposit_amount"] == 1000
     assert result["daily"][-1]["deposit_amount"] == 0
     assert result["excluded_dates"] == ["2026-07-21"]
     assert "EXCLUDING 21 JULY 2026" in artifacts["dashboard_html"].read_text()
+
+
+def test_every_payment_component_uses_the_selected_reporting_period(tmp_path):
+    rows = []
+    for player, transaction_type, amount, gateway, processed_date in (
+        ("before", "Deposit", 9000, "Airtel", "2026-08-09"),
+        ("period-deposit", "Deposit", 1000, "Airtel", "2026-08-10"),
+        ("period-withdrawal", "Withdrawal", 250, "Airtel", "2026-08-11"),
+        ("period-retail", "Deposit", 400, "Retail", "2026-08-12"),
+        ("after", "Withdrawal", 8000, "MomoMTN", "2026-08-17"),
+    ):
+        transaction = dict.fromkeys(EXPECTED_HEADERS, "")
+        transaction.update({
+            "Username": player,
+            "User ID": player,
+            "Currency": "XAF",
+            "Amount": amount,
+            "Gateway": gateway,
+            "Processed": "Yes",
+            "Type": transaction_type,
+            "Processed Date": processed_date,
+            "Status": "Completed [Approved]",
+        })
+        rows.append(transaction)
+
+    path = tmp_path / "mixed-period-payments.csv"
+    pd.DataFrame(rows).to_csv(path, index=False)
+    artifacts = DepositsWithdrawalsBonusDashboardReport(
+        PaymentsConfig(
+            audit_reference_daily_deposits_xaf={},
+            published_deposit_adjustment_xaf=Decimal(0),
+        )
+    ).run(
+        path,
+        tmp_path / "mixed-period-work",
+        report_date=date(2026, 8, 17),
+        reporting_period_start=date(2026, 8, 10),
+        reporting_period_end=date(2026, 8, 16),
+        generation_uuid="mixed-period-test",
+        render_outputs=False,
+    )
+
+    result = json.loads(artifacts["calculated_results"].read_text())
+    assert result["summary"]["deposit_count"] == 2
+    assert result["summary"]["deposit_amount"] == 1400
+    assert result["summary"]["source_deposit_amount"] == 1400
+    assert result["summary"]["withdrawal_count"] == 1
+    assert result["summary"]["withdrawal_amount"] == 250
+    assert result["summary"]["net_cash_flow"] == 1150
+    assert result["summary"]["retail_deposit_count"] == 1
+    assert result["summary"]["retail_deposit_amount"] == 400
+    assert sum(item["deposit_amount"] for item in result["daily"]) == 1400
+    assert sum(item["withdrawal_amount"] for item in result["daily"]) == 250
+    assert sum(item["deposit_amount"] for item in result["channels"]) == 1400
+    assert sum(item["withdrawal_amount"] for item in result["channels"]) == 250
+    assert result["trend_label"] == "SELECTED PERIOD (7 DAYS)"
+    assert all(check["passed"] for check in result["reconciliation"])
+    html = artifacts["dashboard_html"].read_text()
+    assert "XAF 9,000" not in html
+    assert "XAF 8,000" not in html

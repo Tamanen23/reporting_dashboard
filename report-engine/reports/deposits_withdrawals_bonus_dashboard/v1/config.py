@@ -11,11 +11,13 @@ class PaymentsConfig:
     processed_values: frozenset[str] = frozenset({"yes", "true", "1"})
     allowed_gateways: frozenset[str] = frozenset({"momomtn", "airtel", "retail"})
     excluded_dates: frozenset[date] = frozenset()
-    summary_scope: str = "workbook_snapshot"
+    summary_scope: str = "reporting_period"
     published_deposit_adjustment_xaf: Decimal = Decimal(0)
     daily_deposit_adjustments_xaf: dict[date, Decimal] = field(default_factory=dict)
     # Reference-image values are audit benchmarks only. They never alter data.
     audit_reference_deposit_total_xaf: Decimal = Decimal(2043435)
+    audit_reference_period_start: date = date(2026, 6, 11)
+    audit_reference_period_end: date = date(2026, 7, 21)
     audit_reference_daily_deposits_xaf: dict[date, Decimal] = field(
         default_factory=lambda: {date(2026, 7, 18): Decimal(36550)}
     )

@@ -85,6 +85,30 @@ final class ReportRegistryAndUploadTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_report_date_cannot_precede_the_reporting_period_end(): void
+    {
+        Queue::fake();
+        $payload = $this->payload($this->xlsx([
+            'ID',
+            'User',
+            'Registered Date',
+            'Reg. finished',
+            'Status',
+            'Disabled',
+            'Deleted',
+            'Last deposit',
+        ]));
+        $payload['report_date'] = '2026-07-20';
+        $payload['reporting_period_end'] = '2026-07-21';
+
+        $this->actingAs(User::factory()->create())
+            ->post(route('reports.store'), $payload)
+            ->assertSessionHasErrors('report_date');
+
+        self::assertSame(0, ReportGeneration::query()->count());
+        Queue::assertNothingPushed();
+    }
+
     public function test_valid_upload_is_stored_queued_and_exact_duplicate_opens_existing_generation(): void
     {
         Queue::fake();

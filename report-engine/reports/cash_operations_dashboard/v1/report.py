@@ -15,11 +15,12 @@ from pypdf import PdfReader
 
 from core.contracts import BaseReport
 from core.exceptions import InputValidationError
+from core.reporting_period import validate_reporting_period
 from core.tabular import parse_datetime, parse_numeric, read_table
 
 from .config import CashOperationsConfig
 
-VERSION = "1.0.0-provisional.3"
+VERSION = "1.0.0-provisional.4"
 HEADERS = [
     "Slip #", "Date & Time", "Currency", "Game", "Cash Amount",
     "Withholding Tax", "Type", "User #", "User Name", "Paid Out Total - Promo",
@@ -33,6 +34,9 @@ class CashOperationsDashboardReport(BaseReport):
     def run(self, workbook_path: Path, work_directory: Path, *, report_date: date,
             reporting_period_start: date, reporting_period_end: date,
             generation_uuid: str, render_outputs: bool = True) -> dict[str, Path]:
+        validate_reporting_period(
+            report_date, reporting_period_start, reporting_period_end
+        )
         for name in ("prepared", "results", "charts", "render", "outputs", "manifest"):
             (work_directory / name).mkdir(parents=True, exist_ok=True)
         frame, validation, source = self._read(workbook_path)
@@ -218,16 +222,29 @@ class CashOperationsDashboardReport(BaseReport):
         last_stake = sum(Decimal(str(x["bet_amount"])) for x in last_ten)
         last_paid = sum(Decimal(str(x["payout_amount"])) for x in last_ten)
         discrepancies = []
-        payout_difference = last_paid - self.config.audit_reference_last_ten_payout_xaf
-        if payout_difference != 0:
+        reference_period_applies = (
+            start == self.config.audit_reference_period_start
+            and end == self.config.audit_reference_period_end
+        )
+        payout_difference = (
+            last_paid - self.config.audit_reference_last_ten_payout_xaf
+            if reference_period_applies
+            else Decimal(0)
+        )
+        if reference_period_applies and payout_difference != 0:
             discrepancies.append({
                 "metric": "Last-10-days winning paid",
                 "benchmark": float(self.config.audit_reference_last_ten_payout_xaf),
                 "calculated": float(last_paid), "difference": float(payout_difference),
                 "message": f"Production reference differs from source transactions by XAF {abs(payout_difference):,.0f}.",
             })
-        lowest_difference = Decimal(str(low_paid["payout_amount"])) - self.config.audit_reference_lowest_payout_xaf
-        if lowest_difference != 0:
+        lowest_difference = (
+            Decimal(str(low_paid["payout_amount"]))
+            - self.config.audit_reference_lowest_payout_xaf
+            if reference_period_applies
+            else Decimal(0)
+        )
+        if reference_period_applies and lowest_difference != 0:
             discrepancies.append({
                 "metric": "Lowest winning-paid day",
                 "benchmark": float(self.config.audit_reference_lowest_payout_xaf),
@@ -243,17 +260,20 @@ class CashOperationsDashboardReport(BaseReport):
              "difference": 0, "passed": float(paid) == sum(x["payout_amount"] for x in daily)},
             {"name": "ggr", "expected": float(stake-paid), "actual": float(ggr),
              "difference": 0, "passed": ggr == stake-paid},
-            {"name": "production_reference_last_ten_payout",
-             "expected": float(self.config.audit_reference_last_ten_payout_xaf),
-             "actual": float(last_paid), "difference": float(payout_difference),
-             "passed": payout_difference == 0,
-             "note": "Audit comparison only; source-calculated value is preserved."},
-            {"name": "production_reference_lowest_payout",
-             "expected": float(self.config.audit_reference_lowest_payout_xaf),
-             "actual": low_paid["payout_amount"], "difference": float(lowest_difference),
-             "passed": lowest_difference == 0,
-             "note": "Audit comparison only; source-calculated value is preserved."},
         ]
+        if reference_period_applies:
+            reconciliation.extend([
+                {"name": "production_reference_last_ten_payout",
+                 "expected": float(self.config.audit_reference_last_ten_payout_xaf),
+                 "actual": float(last_paid), "difference": float(payout_difference),
+                 "passed": payout_difference == 0,
+                 "note": "Audit comparison only; source-calculated value is preserved."},
+                {"name": "production_reference_lowest_payout",
+                 "expected": float(self.config.audit_reference_lowest_payout_xaf),
+                 "actual": low_paid["payout_amount"], "difference": float(lowest_difference),
+                 "passed": lowest_difference == 0,
+                 "note": "Audit comparison only; source-calculated value is preserved."},
+            ])
         warnings = [
             "PROVISIONAL: Type=Bet and Type=Payout are treated as valid settled transactions because the export has no status field.",
             "PROVISIONAL: Date & Time is used as the recognition date because the export has no separate settlement date.",

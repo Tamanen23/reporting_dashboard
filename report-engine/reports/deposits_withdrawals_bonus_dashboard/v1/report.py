@@ -16,11 +16,12 @@ from pypdf import PdfReader
 
 from core.contracts import BaseReport
 from core.exceptions import InputValidationError
+from core.reporting_period import validate_reporting_period
 from core.tabular import parse_datetime, parse_numeric, read_table
 
 from .config import PaymentsConfig
 
-VERSION = "1.0.0-provisional.5"
+VERSION = "1.0.0-provisional.6"
 EXPECTED_HEADERS = [
     "Username", "User ID", "Tags", "Currency", "Amount", "Net deposit amount",
     "Gateway", "Gateway information", "Processed", "Type", "Created at",
@@ -44,6 +45,9 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         generation_uuid: str,
         render_outputs: bool = True,
     ) -> dict[str, Path]:
+        validate_reporting_period(
+            report_date, reporting_period_start, reporting_period_end
+        )
         work_directory = Path(work_directory)
         for name in ("prepared", "results", "charts", "render", "outputs", "manifest"):
             (work_directory / name).mkdir(parents=True, exist_ok=True)
@@ -450,10 +454,14 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         self, frame: pd.DataFrame, bonus: dict[str, Any], report_date: date,
         period_start: date, period_end: date,
     ) -> dict[str, Any]:
-        snapshot = frame
-        period = frame[frame["included_in_reporting_period"]]
-        deposits = snapshot[snapshot.transaction_type == "deposit"]
-        withdrawals = snapshot[snapshot.transaction_type == "withdrawal"]
+        period = frame[frame["included_in_reporting_period"]].copy()
+        if period.empty:
+            raise InputValidationError(
+                "No approved payment transactions fall inside the reporting period.",
+                code="NO_PAYMENTS_IN_REPORTING_PERIOD",
+            )
+        deposits = period[period.transaction_type == "deposit"]
+        withdrawals = period[period.transaction_type == "withdrawal"]
         source_deposit_amount = Decimal(str(deposits.amount.sum()))
         deposit_amount = source_deposit_amount + self.config.published_deposit_adjustment_xaf
         withdrawal_amount = Decimal(str(withdrawals.amount.sum()))
@@ -480,6 +488,11 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
             })
         last_dates = list(date_index[-10:])
         last_ten = [item for item in daily if pd.Timestamp(item["date"]) in last_dates]
+        trend_label = (
+            f"SELECTED PERIOD ({len(last_ten)} DAYS)"
+            if len(date_index) <= 10
+            else "LAST 10 DAYS"
+        )
         channels = []
         for gateway, label in (("Airtel", "Airtel Money"), ("MomoMTN", "MTN Money"), ("Retail", "Retail (Manual)")):
             dep = deposits[deposits.gateway == gateway]
@@ -502,8 +515,16 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         last_dep = sum(Decimal(str(item["deposit_amount"])) for item in last_ten)
         last_wit = sum(Decimal(str(item["withdrawal_amount"])) for item in last_ten)
         discrepancies = []
-        total_difference = deposit_amount - self.config.audit_reference_deposit_total_xaf
-        if total_difference != 0:
+        reference_period_applies = (
+            period_start == self.config.audit_reference_period_start
+            and period_end == self.config.audit_reference_period_end
+        )
+        total_difference = (
+            deposit_amount - self.config.audit_reference_deposit_total_xaf
+            if reference_period_applies
+            else Decimal(0)
+        )
+        if reference_period_applies and total_difference != 0:
             discrepancies.append({
                 "metric": "Total deposit amount",
                 "benchmark": float(self.config.audit_reference_deposit_total_xaf),
@@ -515,7 +536,11 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                     f"XAF {abs(total_difference):,.0f}."
                 ),
             })
-        for benchmark_date, benchmark_value in self.config.audit_reference_daily_deposits_xaf.items():
+        for benchmark_date, benchmark_value in (
+            self.config.audit_reference_daily_deposits_xaf.items()
+            if reference_period_applies
+            else []
+        ):
             actual_item = next(
                 (item for item in daily if item["date"] == benchmark_date.isoformat()), None
             )
@@ -538,21 +563,50 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         reconciliation = [
             {
                 "name": "source_transaction_count",
-                "expected": len(frame), "actual": len(deposits) + len(withdrawals),
-                "difference": 0, "passed": True,
-            },
-            {
-                "name": "production_reference_deposit_total",
-                "expected": float(self.config.audit_reference_deposit_total_xaf),
-                "actual": float(deposit_amount),
-                "difference": float(total_difference),
-                "passed": total_difference == 0,
-                "note": "Audit comparison only; the benchmark never changes calculated values.",
+                "expected": len(period), "actual": len(deposits) + len(withdrawals),
+                "difference": 0,
+                "passed": len(period) == len(deposits) + len(withdrawals),
             },
             {
                 "name": "net_cash_flow",
                 "expected": float(deposit_amount - withdrawal_amount),
                 "actual": float(net_cash), "difference": 0, "passed": True,
+            },
+            {
+                "name": "period_deposit_count_matches_daily",
+                "expected": len(deposits),
+                "actual": sum(item["deposit_count"] for item in daily),
+                "difference": len(deposits)
+                - sum(item["deposit_count"] for item in daily),
+                "passed": len(deposits)
+                == sum(item["deposit_count"] for item in daily),
+            },
+            {
+                "name": "period_withdrawal_count_matches_daily",
+                "expected": len(withdrawals),
+                "actual": sum(item["withdrawal_count"] for item in daily),
+                "difference": len(withdrawals)
+                - sum(item["withdrawal_count"] for item in daily),
+                "passed": len(withdrawals)
+                == sum(item["withdrawal_count"] for item in daily),
+            },
+            {
+                "name": "period_deposit_total_matches_daily",
+                "expected": float(deposit_amount),
+                "actual": sum(item["deposit_amount"] for item in daily),
+                "difference": float(deposit_amount)
+                - sum(item["deposit_amount"] for item in daily),
+                "passed": float(deposit_amount)
+                == sum(item["deposit_amount"] for item in daily),
+            },
+            {
+                "name": "period_withdrawal_total_matches_daily",
+                "expected": float(withdrawal_amount),
+                "actual": sum(item["withdrawal_amount"] for item in daily),
+                "difference": float(withdrawal_amount)
+                - sum(item["withdrawal_amount"] for item in daily),
+                "passed": float(withdrawal_amount)
+                == sum(item["withdrawal_amount"] for item in daily),
             },
             {
                 "name": "last_ten_deposit_summary_matches_chart",
@@ -565,6 +619,15 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "actual": float(last_wit), "difference": 0, "passed": True,
             },
         ]
+        if reference_period_applies:
+            reconciliation.append({
+                "name": "production_reference_deposit_total",
+                "expected": float(self.config.audit_reference_deposit_total_xaf),
+                "actual": float(deposit_amount),
+                "difference": float(total_difference),
+                "passed": total_difference == 0,
+                "note": "Audit comparison only; the benchmark never changes calculated values.",
+            })
         if bonus["available"]:
             reconciliation.append({
                 "name": "bonus_aggregate",
@@ -587,9 +650,9 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
             if item["metric"] != "Total deposit amount"
         )
         warnings = [
-            "PROVISIONAL: summary cards use the full workbook snapshot while the trend uses the selected reporting period.",
+            "All payment KPIs, channel totals, trends and insights use the selected reporting period.",
             (
-                "Bonus KPIs come from the aggregate Bonus Wallet summary; no row-level bonus transactions are available."
+                "Bonus KPIs come from the separately supplied aggregate for the selected period; its date scope cannot be independently verified because it has no row-level transaction dates."
                 if bonus["available"]
                 else "Bonus KPIs are unavailable from the supplied CSV transaction export."
             ),
@@ -618,7 +681,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "deposit_withdrawal_ratio": float(ratio),
                 "bonus_conversion_rate": float(conversion) if bonus["available"] else None,
             },
-            "daily": daily, "last_ten": last_ten,
+            "daily": daily, "last_ten": last_ten, "trend_label": trend_label,
             "last_ten_summary": {
                 "deposit_amount": float(last_dep), "withdrawal_amount": float(last_wit),
                 "net_cash_flow": float(last_dep - last_wit),
@@ -630,7 +693,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
             "insights": [
                 f"Total deposits amounted to XAF {deposit_amount:,.0f} across {len(deposits):,} successful transactions.",
                 f"Total withdrawals amounted to XAF {withdrawal_amount:,.0f} across {len(withdrawals):,} transactions.",
-                f"Net cash flow for the reporting snapshot is {'positive' if net_cash >= 0 else 'negative'} at XAF {net_cash:,.0f}.",
+                f"Net cash flow for the reporting period is {'positive' if net_cash >= 0 else 'negative'} at XAF {net_cash:,.0f}.",
                 *(
                     [
                         f"Players were credited XAF {bonus['credited_amount']:,.0f} in bonuses across {bonus['credited_count']:,} transactions.",
@@ -642,7 +705,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 f"Retail deposits contributed XAF {deposits[deposits.gateway == 'Retail'].amount.sum():,.0f} across {len(deposits[deposits.gateway == 'Retail']):,} manually processed transactions.",
                 f"Deposit activity peaked on {date.fromisoformat(highest_deposit['date']).strftime('%d %B %Y')} with XAF {highest_deposit['deposit_amount']:,.0f}.",
                 f"Withdrawal activity peaked on {date.fromisoformat(highest_withdrawal['date']).strftime('%d %B %Y')} with XAF {highest_withdrawal['withdrawal_amount']:,.0f}.",
-                f"A {'negative' if last_dep-last_wit < 0 else 'positive'} net cash flow of XAF {last_dep-last_wit:,.0f} was recorded in the last 10 days.",
+                f"A {'negative' if last_dep-last_wit < 0 else 'positive'} net cash flow of XAF {last_dep-last_wit:,.0f} was recorded in the {trend_label.casefold()}.",
             ],
             "reconciliation": reconciliation, "warnings": warnings,
         }

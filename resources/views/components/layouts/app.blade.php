@@ -23,9 +23,9 @@
                 <div class="nav-side">
                     <nav class="nav-links" aria-label="Primary navigation">
                         <a class="nav-link {{ request()->routeIs('reports.create') ? 'active' : '' }}" href="{{ route('reports.create') }}">Generate</a>
-                        <a class="nav-link {{ request()->routeIs('reports.index') || request()->routeIs('reports.show') ? 'active' : '' }}" href="{{ route('reports.index') }}">Reports</a>
+                        <a class="nav-link {{ request()->routeIs('reports.index') || request()->routeIs('reports.show') ? 'active' : '' }}" href="{{ route('reports.index') }}" target="_blank">Reports</a>
                         <a class="nav-link {{ request()->routeIs('reports.pipeline') ? 'active' : '' }}" href="{{ route('reports.pipeline') }}" target="_blank">Pipeline</a>
-                        @if(auth()->user()->is_admin)<a class="nav-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}" href="{{ route('admin.users.index') }}">Users</a>@endif
+                        @if(auth()->user()->is_admin)<a class="nav-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}" href="{{ route('admin.users.index') }}" target="_blank">Users</a>@endif
                     </nav>
                     <form method="post" action="{{ route('logout') }}">@csrf<button class="signout" type="submit">Sign out</button></form>
                 </div>

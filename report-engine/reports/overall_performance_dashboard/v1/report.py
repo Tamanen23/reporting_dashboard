@@ -14,14 +14,18 @@ from pypdf import PdfReader
 
 from core.contracts import BaseReport
 from core.exceptions import InputValidationError
+from core.reporting_period import validate_reporting_period
 
-VERSION = "1.0.0-provisional.5"
+VERSION = "1.0.0-provisional.6"
 
 
 class OverallPerformanceDashboardReport(BaseReport):
     def run(self, input_paths: dict[str, Path], provenance: dict[str, dict], work_directory: Path, *,
             report_date: date, reporting_period_start: date, reporting_period_end: date,
             generation_uuid: str, render_outputs: bool = True) -> dict[str, Path]:
+        validate_reporting_period(
+            report_date, reporting_period_start, reporting_period_end
+        )
         required = {"registration_results", "payment_bonus_results", "cash_operations_results", "player_activity_results"}
         if set(input_paths) != required:
             raise InputValidationError("Overall Performance requires four exact-period module results.", code="OVERALL_INPUTS_MISSING")
@@ -29,6 +33,38 @@ class OverallPerformanceDashboardReport(BaseReport):
         for folder in ("results", "charts", "render", "outputs", "manifest"):
             (work_directory / folder).mkdir(parents=True, exist_ok=True)
         source = {key: json.loads(Path(path).read_text()) for key, path in input_paths.items()}
+        expected_period = (
+            reporting_period_start.isoformat(), reporting_period_end.isoformat()
+        )
+        source_periods = {
+            "registration_results": (
+                source["registration_results"].get("reporting_period_start"),
+                source["registration_results"].get("reporting_period_end"),
+            ),
+            "payment_bonus_results": (
+                source["payment_bonus_results"].get("period_start"),
+                source["payment_bonus_results"].get("period_end"),
+            ),
+            "cash_operations_results": (
+                source["cash_operations_results"].get("period_start"),
+                source["cash_operations_results"].get("period_end"),
+            ),
+            "player_activity_results": (
+                source["player_activity_results"].get("period_start"),
+                source["player_activity_results"].get("period_end"),
+            ),
+        }
+        mismatched_periods = {
+            key: {"expected": expected_period, "actual": actual}
+            for key, actual in source_periods.items()
+            if actual != expected_period
+        }
+        if mismatched_periods:
+            raise InputValidationError(
+                "Overall Performance source reports do not share its exact reporting period.",
+                code="OVERALL_SOURCE_PERIOD_MISMATCH",
+                context={"sources": mismatched_periods},
+            )
         acknowledged_source_discrepancies = []
         excluded_dates = sorted({
             value

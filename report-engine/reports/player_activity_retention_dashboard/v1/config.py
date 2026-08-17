@@ -18,6 +18,9 @@ class PlayerActivityConfig:
     exclude_deleted_accounts: bool = True
     vip_percentile: float = 0.01
     value_basis: str = "lifetime_deposits"
+    audit_reference_period_start: date = date(2026, 6, 11)
+    audit_reference_period_end: date = date(2026, 7, 21)
+    audit_reference_betting_players: int = 767
     output_width: int = 1536
     output_height: int = 1024
     timezone: str = "Indian/Mauritius"

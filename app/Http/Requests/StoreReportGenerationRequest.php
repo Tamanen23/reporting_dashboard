@@ -17,7 +17,7 @@ final class StoreReportGenerationRequest extends FormRequest
     {
         return [
             'report_code' => ['required', 'string', 'max:100'],
-            'report_date' => ['required', 'date'],
+            'report_date' => ['required', 'date', 'after_or_equal:reporting_period_end'],
             'reporting_period_start' => ['required', 'date'],
             'reporting_period_end' => ['required', 'date', 'after_or_equal:reporting_period_start'],
             'excluded_dates' => ['nullable', 'array'],

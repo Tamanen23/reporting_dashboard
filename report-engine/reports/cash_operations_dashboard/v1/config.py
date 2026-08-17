@@ -14,3 +14,5 @@ class CashOperationsConfig:
     excluded_dates: frozenset[date] = frozenset()
     audit_reference_last_ten_payout_xaf: Decimal = Decimal(859967)
     audit_reference_lowest_payout_xaf: Decimal = Decimal(55126)
+    audit_reference_period_start: date = date(2026, 6, 11)
+    audit_reference_period_end: date = date(2026, 7, 21)

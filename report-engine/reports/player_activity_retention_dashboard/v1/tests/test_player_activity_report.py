@@ -54,7 +54,7 @@ def test_player_activity_builds_mutually_exclusive_master_dataset(tmp_path):
             "bet_legs": bet_legs_path,
         },
         tmp_path / "work",
-        report_date=date(2026, 7, 21),
+        report_date=date(2026, 7, 23),
         reporting_period_start=date(2026, 6, 11),
         reporting_period_end=date(2026, 7, 22),
         generation_uuid="test",
@@ -111,7 +111,7 @@ def test_player_activity_accepts_three_csv_sources(tmp_path):
     artifacts = PlayerActivityRetentionDashboardReport().run(
         {"user_list": user_path, "payment_transactions": payment_path, "bet_legs": bet_path},
         tmp_path / "csv-work",
-        report_date=date(2026, 7, 21),
+        report_date=date(2026, 7, 23),
         reporting_period_start=date(2026, 6, 11),
         reporting_period_end=date(2026, 7, 22),
         generation_uuid="csv-test", render_outputs=False,

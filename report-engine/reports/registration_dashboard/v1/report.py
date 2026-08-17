@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from core.contracts import BaseReport
+from core.reporting_period import validate_reporting_period
 
 from .calculator import RegistrationCalculator
 from .charts import RegistrationChartGenerator
@@ -14,7 +15,7 @@ from .renderer import RegistrationRenderer
 from .schemas import RegistrationResult
 from .validator import RegistrationWorkbookValidator
 
-VERSIONS = ("1.3.0", "1.3.0-provisional.1", "1.2.1")
+VERSIONS = ("1.3.0", "1.3.0-provisional.1", "1.2.2")
 
 
 class RegistrationDashboardReport(BaseReport):
@@ -109,6 +110,9 @@ class RegistrationDashboardReport(BaseReport):
         generation_uuid: str,
         render_outputs: bool = True,
     ) -> dict[str, Path]:
+        validate_reporting_period(
+            report_date, reporting_period_start, reporting_period_end
+        )
         context: dict[str, Any] = {
             "report_date": report_date,
             "reporting_period_start": reporting_period_start,
