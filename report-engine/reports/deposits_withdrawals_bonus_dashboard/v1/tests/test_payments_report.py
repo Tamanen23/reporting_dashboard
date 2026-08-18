@@ -14,6 +14,16 @@ from reports.deposits_withdrawals_bonus_dashboard.v1.report import (
 )
 
 
+def write_user_list(tmp_path, identifiers, *, test_users=None):
+    test_users = test_users or {}
+    path = tmp_path / "user-list.csv"
+    pd.DataFrame([
+        {"ID": identifier, "User": test_users.get(identifier, f"Player {identifier}")}
+        for identifier in identifiers
+    ]).to_csv(path, index=False)
+    return path
+
+
 def test_workbook_drives_payment_and_bonus_results(tmp_path):
     workbook = Workbook()
     raw = workbook.active
@@ -62,6 +72,7 @@ def test_workbook_drives_payment_and_bonus_results(tmp_path):
     ).run(
         path,
         tmp_path / "work",
+        user_list_path=write_user_list(tmp_path, ["P1"]),
         report_date=date(2026, 7, 22),
         reporting_period_start=date(2026, 7, 20),
         reporting_period_end=date(2026, 7, 21),
@@ -102,6 +113,7 @@ def test_csv_transactions_work_without_bonus_summary(tmp_path):
         )
     ).run(
         transactions_path, tmp_path / "csv-work",
+        user_list_path=write_user_list(tmp_path, ["P1"]),
         report_date=date(2026, 7, 22),
         reporting_period_start=date(2026, 7, 20),
         reporting_period_end=date(2026, 7, 22),
@@ -147,6 +159,7 @@ def test_bonus_summary_csv_drives_bonus_results_and_reconciles_total(tmp_path):
         )
     ).run(
         transactions_path, tmp_path / "bonus-work", bonus_summary_path=bonus_path,
+        user_list_path=write_user_list(tmp_path, ["P1"]),
         report_date=date(2026, 7, 22),
         reporting_period_start=date(2026, 7, 20),
         reporting_period_end=date(2026, 7, 22),
@@ -161,7 +174,7 @@ def test_bonus_summary_csv_drives_bonus_results_and_reconciles_total(tmp_path):
     assert result["bonus"]["available"] is True
     manifest = json.loads(artifacts["manifest"].read_text())
     assert [item["key"] for item in manifest["inputs"]] == [
-        "payment_transactions", "bonus_summary",
+        "payment_transactions", "user_list", "bonus_summary",
     ]
 
 
@@ -205,6 +218,7 @@ def test_explicit_excluded_date_is_removed_and_displayed(tmp_path):
         )
     ).run(
         path, tmp_path / "excluded-work", report_date=date(2026, 7, 22),
+        user_list_path=write_user_list(tmp_path, ["P-2026-07-20", "P-2026-07-21"]),
         reporting_period_start=date(2026, 7, 20),
         reporting_period_end=date(2026, 7, 21),
         generation_uuid="excluded-test", render_outputs=False,
@@ -250,6 +264,9 @@ def test_every_payment_component_uses_the_selected_reporting_period(tmp_path):
     ).run(
         path,
         tmp_path / "mixed-period-work",
+        user_list_path=write_user_list(
+            tmp_path, ["before", "period-deposit", "period-withdrawal", "period-retail", "after"]
+        ),
         report_date=date(2026, 8, 17),
         reporting_period_start=date(2026, 8, 10),
         reporting_period_end=date(2026, 8, 16),
@@ -275,3 +292,76 @@ def test_every_payment_component_uses_the_selected_reporting_period(tmp_path):
     html = artifacts["dashboard_html"].read_text()
     assert "XAF 9,000" not in html
     assert "XAF 8,000" not in html
+
+
+def test_user_list_user_field_excludes_test_accounts_case_insensitively(tmp_path):
+    rows = []
+    for username, amount in (("4520400", 2000), ("4520401", 1000)):
+        transaction = dict.fromkeys(EXPECTED_HEADERS, "")
+        transaction.update({
+            "Username": username, "User ID": f"internal-{username}", "Currency": "XAF",
+            "Amount": amount, "Gateway": "Airtel", "Processed": "Yes",
+            "Type": "Deposit", "Processed Date": "2026-08-10",
+            "Status": "Completed [Approved]",
+        })
+        rows.append(transaction)
+    payments = tmp_path / "payments.csv"
+    pd.DataFrame(rows).to_csv(payments, index=False)
+
+    artifacts = DepositsWithdrawalsBonusDashboardReport().run(
+        payments,
+        tmp_path / "test-account-work",
+        user_list_path=write_user_list(
+            tmp_path,
+            ["internal-4520400", "internal-4520401"],
+            test_users={"internal-4520400": "Mouss TEST"},
+        ),
+        report_date=date(2026, 8, 11),
+        reporting_period_start=date(2026, 8, 10),
+        reporting_period_end=date(2026, 8, 10),
+        generation_uuid="user-list-test",
+        render_outputs=False,
+    )
+
+    result = json.loads(artifacts["calculated_results"].read_text())
+    validation = json.loads(artifacts["validation_log"].read_text())
+    assert result["summary"]["deposit_count"] == 1
+    assert result["summary"]["deposit_amount"] == 1000
+    assert validation["user_list"]["test_transactions_excluded"] == 1
+    assert "TEST_ACCOUNT_USER_LIST" in {item["code"] for item in validation["issues"]}
+
+
+def test_selected_period_payment_must_match_user_list(tmp_path):
+    transaction = dict.fromkeys(EXPECTED_HEADERS, "")
+    transaction.update({
+        "Username": "missing-id", "User ID": "P1", "Currency": "XAF", "Amount": 1000,
+        "Gateway": "Airtel", "Processed": "Yes", "Type": "Deposit",
+        "Processed Date": "2026-08-10", "Status": "Completed [Approved]",
+    })
+    payments = tmp_path / "unmatched.csv"
+    pd.DataFrame([transaction]).to_csv(payments, index=False)
+
+    with pytest.raises(InputValidationError) as error:
+        DepositsWithdrawalsBonusDashboardReport().run(
+            payments, tmp_path / "unmatched-work",
+            user_list_path=write_user_list(tmp_path, ["another-id"]),
+            report_date=date(2026, 8, 11),
+            reporting_period_start=date(2026, 8, 10),
+            reporting_period_end=date(2026, 8, 10),
+            generation_uuid="unmatched-test", render_outputs=False,
+        )
+
+    assert error.value.code == "PAYMENT_USER_LIST_UNMATCHED"
+
+
+def test_duplicate_user_list_ids_are_rejected(tmp_path):
+    user_list = tmp_path / "duplicate-user-list.csv"
+    pd.DataFrame([
+        {"ID": "4520400", "User": "First name"},
+        {"ID": "4520400", "User": "Second name"},
+    ]).to_csv(user_list, index=False)
+
+    with pytest.raises(InputValidationError) as error:
+        DepositsWithdrawalsBonusDashboardReport()._read_user_list(user_list)
+
+    assert error.value.code == "USER_LIST_DUPLICATE_ID"

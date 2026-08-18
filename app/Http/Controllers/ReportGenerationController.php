@@ -130,6 +130,7 @@ final class ReportGenerationController extends Controller
             $payments = $byCode->get('deposits_withdrawals_bonus_dashboard', collect())->first(
                 fn (array $item) => $item['period_start'] === $player['period_start']
                     && $item['period_end'] === $player['period_end']
+                    && ($item['input_files']['user_list']['sha256'] ?? null) === $playerFiles['user_list']['sha256']
                     && ($item['input_files']['payment_transactions']['sha256'] ?? null) === $playerFiles['payment_transactions']['sha256']
             );
             if (! $registration || ! $payments) {
@@ -612,14 +613,17 @@ final class ReportGenerationController extends Controller
             'User List' => [
                 $registration->files->firstWhere('input_key', 'user_list')?->sha256_checksum,
                 $playerActivity->files->firstWhere('input_key', 'user_list')?->sha256_checksum,
+                $payments->files->firstWhere('input_key', 'user_list')?->sha256_checksum,
             ],
             'Deposits & Withdrawals' => [
                 $payments->files->firstWhere('input_key', 'payment_transactions')?->sha256_checksum,
                 $playerActivity->files->firstWhere('input_key', 'payment_transactions')?->sha256_checksum,
             ],
         ];
-        foreach ($checksumPairs as $sourceName => [$moduleChecksum, $playerChecksum]) {
-            if (! $moduleChecksum || ! $playerChecksum || ! hash_equals($moduleChecksum, $playerChecksum)) {
+        foreach ($checksumPairs as $sourceName => $checksums) {
+            $checksums = array_values(array_filter($checksums));
+            if (count($checksums) !== count($checksumPairs[$sourceName])
+                || count(array_unique($checksums)) !== 1) {
                 throw ValidationException::withMessages([
                     'source_generations.player_activity_results' => "The selected Player Activity report was not generated from the same {$sourceName} workbook as the selected owning module.",
                 ]);

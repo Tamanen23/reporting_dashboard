@@ -112,6 +112,15 @@ final class GenerateRegistrationDashboard implements ShouldQueue
         if ($isPayments && ($bonusSummary = $generation->files->firstWhere('input_key', 'bonus_summary'))) {
             $payload['bonus_summary_path'] = $this->enginePath($bonusSummary->stored_path);
         }
+        if ($isPayments) {
+            $userList = $generation->files->firstWhere('input_key', 'user_list');
+            if ($userList === null) {
+                $this->failPermanently($generation, 'MISSING_USER_LIST', 'The matching User List report is missing.');
+
+                return;
+            }
+            $payload['user_list_path'] = $this->enginePath($userList->stored_path);
+        }
         if ($isPlayerActivity) {
             unset($payload['input_path']);
             $payload['input_paths'] = [

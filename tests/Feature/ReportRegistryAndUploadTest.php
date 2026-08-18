@@ -221,12 +221,17 @@ final class ReportRegistryAndUploadTest extends TestCase
             'Bonus | Casino,XAF,200,50,2,1',
             'Total,XAF,700,175,6,2',
         ]);
+        $userList = implode("\n", [
+            'ID,User',
+            'alice,Alice',
+        ]);
         $payload = [
             'report_code' => 'deposits_withdrawals_bonus_dashboard',
             'report_date' => '2026-07-22',
             'reporting_period_start' => '2026-07-20',
             'reporting_period_end' => '2026-07-22',
             'inputs' => [
+                'user_list' => UploadedFile::fake()->createWithContent('User List.csv', $userList),
                 'payment_transactions' => UploadedFile::fake()->createWithContent('Payments.csv', $transactions),
                 'bonus_summary' => UploadedFile::fake()->createWithContent('Bonus Summary.csv', $bonus),
             ],
@@ -237,10 +242,11 @@ final class ReportRegistryAndUploadTest extends TestCase
 
         $files = ReportGeneration::query()->with('files')->sole()->files->keyBy('input_key');
         self::assertEqualsCanonicalizing(
-            ['payment_transactions', 'bonus_summary'],
+            ['user_list', 'payment_transactions', 'bonus_summary'],
             $files->keys()->values()->all(),
         );
         self::assertSame('csv', $files['payment_transactions']->extension);
+        self::assertSame('csv', $files['user_list']->extension);
         self::assertSame('csv', $files['bonus_summary']->extension);
         Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
     }
@@ -248,6 +254,10 @@ final class ReportRegistryAndUploadTest extends TestCase
     public function test_payment_csv_requires_bonus_summary_csv(): void
     {
         Queue::fake();
+        $userList = implode("\n", [
+            'ID,User',
+            'alice,Alice',
+        ]);
         $transactions = implode("\n", [
             'Username,User ID,Currency,Amount,Gateway,Processed,Type,Processed Date,Status',
             'alice,P001,XAF,1000,Airtel,Yes,Deposit,2026-07-20,Completed [Approved]',
@@ -259,6 +269,7 @@ final class ReportRegistryAndUploadTest extends TestCase
             'reporting_period_start' => '2026-07-20',
             'reporting_period_end' => '2026-07-22',
             'inputs' => [
+                'user_list' => UploadedFile::fake()->createWithContent('User List.csv', $userList),
                 'payment_transactions' => UploadedFile::fake()->createWithContent('Payments.csv', $transactions),
             ],
         ])->assertSessionHasErrors('inputs.bonus_summary');
@@ -369,7 +380,7 @@ final class ReportRegistryAndUploadTest extends TestCase
         ];
         $sources = [
             'registration_dashboard' => ['user_list'],
-            'deposits_withdrawals_bonus_dashboard' => ['payment_transactions'],
+            'deposits_withdrawals_bonus_dashboard' => ['user_list', 'payment_transactions'],
             'cash_operations_dashboard' => ['cash_operations'],
             'player_activity_retention_dashboard' => ['user_list', 'payment_transactions', 'bet_legs'],
         ];
@@ -430,7 +441,7 @@ final class ReportRegistryAndUploadTest extends TestCase
             'registration_results' => ['registration_dashboard', ['user_list']],
             'payment_bonus_results' => [
                 'deposits_withdrawals_bonus_dashboard',
-                ['payment_transactions', 'bonus_summary'],
+                ['user_list', 'payment_transactions', 'bonus_summary'],
             ],
             'cash_operations_results' => ['cash_operations_dashboard', ['cash_operations']],
             'player_activity_results' => [

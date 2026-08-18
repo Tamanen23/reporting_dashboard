@@ -21,7 +21,7 @@ from core.tabular import parse_datetime, parse_numeric, read_table
 
 from .config import PaymentsConfig
 
-VERSION = "1.0.0-provisional.6"
+VERSION = "1.0.0-provisional.7"
 EXPECTED_HEADERS = [
     "Username", "User ID", "Tags", "Currency", "Amount", "Net deposit amount",
     "Gateway", "Gateway information", "Processed", "Type", "Created at",
@@ -38,6 +38,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         workbook_path: Path,
         work_directory: Path,
         *,
+        user_list_path: Path,
         bonus_summary_path: Path | None = None,
         report_date: date,
         reporting_period_start: date,
@@ -52,8 +53,9 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         for name in ("prepared", "results", "charts", "render", "outputs", "manifest"):
             (work_directory / name).mkdir(parents=True, exist_ok=True)
 
+        user_lookup, user_source = self._read_user_list(user_list_path)
         frame, bonus, validation, source = self._read(
-            workbook_path, bonus_summary_path=bonus_summary_path
+            workbook_path, user_lookup=user_lookup, bonus_summary_path=bonus_summary_path
         )
         frame["included_in_reporting_period"] = (
             frame["transaction_date"].between(
@@ -61,6 +63,40 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
             )
             & ~frame["transaction_date"].dt.date.isin(self.config.excluded_dates)
         )
+        unmatched = frame[
+            frame["included_in_reporting_period"] & ~frame["user_list_matched"]
+        ]
+        if not unmatched.empty:
+            identifiers = sorted(unmatched["payment_user_id_key"].dropna().unique().tolist())
+            raise InputValidationError(
+                "The User List does not cover every payment account in the selected reporting period.",
+                code="PAYMENT_USER_LIST_UNMATCHED",
+                context={
+                    "unmatched_transaction_count": int(len(unmatched)),
+                    "unmatched_account_count": len(identifiers),
+                    "sample_payment_user_ids": identifiers[:25],
+                },
+            )
+        test_accounts = frame[frame["user_list_is_test"]]
+        for item in test_accounts.itertuples(index=False):
+            validation["issues"].append({
+                "row": int(item.source_row),
+                "code": "TEST_ACCOUNT_USER_LIST",
+                "payment_username": item.username,
+                "user_list_user": item.user_list_user,
+            })
+        validation["user_list"] = {
+            **user_source,
+            "matched_transactions": int(frame["user_list_matched"].sum()),
+            "unmatched_transactions_outside_period": int(
+                ((~frame["user_list_matched"]) & (~frame["included_in_reporting_period"])).sum()
+            ),
+            "test_transactions_excluded": int(len(test_accounts)),
+            "test_amount_excluded": float(test_accounts["amount"].sum()),
+        }
+        frame = frame[~frame["user_list_is_test"]].copy()
+        validation["accepted_rows"] = int(len(frame))
+        validation["rejected_rows"] = int(len(validation["issues"]))
         dataset_path = work_directory / "prepared" / "payment-transactions.parquet"
         frame.to_parquet(dataset_path, index=False)
         bonus_path = work_directory / "prepared" / "bonus-summary.parquet"
@@ -124,6 +160,10 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "key": "payment_transactions",
                 "filename": workbook_path.name,
                 "sha256": self._sha256(workbook_path),
+            }, {
+                "key": "user_list",
+                "filename": user_list_path.name,
+                "sha256": self._sha256(user_list_path),
             }] + (
                 [{
                     "key": "bonus_summary",
@@ -140,6 +180,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "processed_values": sorted(self.config.processed_values),
                 "allowed_gateways": sorted(self.config.allowed_gateways),
                 "exclude_test_usernames": True,
+                "test_account_source": "Payment User ID matched to User List ID; User contains 'test' case-insensitively.",
                 "date_normalization": "Processed Date is parsed and normalized to calendar date.",
                 "published_deposit_adjustment_xaf": str(
                     self.config.published_deposit_adjustment_xaf
@@ -174,7 +215,7 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
         return artifacts
 
     def _read(
-        self, path: Path, *, bonus_summary_path: Path | None = None
+        self, path: Path, *, user_lookup: dict[str, str], bonus_summary_path: Path | None = None
     ) -> tuple[pd.DataFrame, dict[str, Any], dict, dict]:
         workbook = None
         if path.suffix.casefold() == ".csv":
@@ -248,6 +289,12 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
             records.append({
                 "source_row": row_number,
                 "username": username,
+                "payment_user_id_key": self._normalise_identifier(user_id),
+                "user_list_matched": self._normalise_identifier(user_id) in user_lookup,
+                "user_list_user": user_lookup.get(self._normalise_identifier(user_id)),
+                "user_list_is_test": "test" in (
+                    user_lookup.get(self._normalise_identifier(user_id), "").casefold()
+                ),
                 "user_id": user_id,
                 "currency": str(row["Currency"] or "").strip(),
                 "amount": float(amount),
@@ -298,6 +345,11 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
                 "transaction_type": "Type", "transaction_date": "Processed Date",
                 "status": "Status",
             },
+            "user_list_mapping": {
+                "join": "Payment User ID = User List ID",
+                "test_account_field": "User",
+                "test_account_rule": "contains 'test' case-insensitively",
+            },
             "bonus_mapping": (
                 {
                     "wallet_type": "Wallet Type", "currency": "Currency",
@@ -316,6 +368,57 @@ class DepositsWithdrawalsBonusDashboardReport(BaseReport):
             ),
         }
         return frame, bonus, validation, source
+
+    def _read_user_list(self, path: Path) -> tuple[dict[str, str], dict[str, Any]]:
+        frame = read_table(path)
+        frame.columns = [str(column).strip() for column in frame.columns]
+        missing = sorted({"ID", "User"}.difference(frame.columns))
+        if missing:
+            raise InputValidationError(
+                "The User List structure is invalid.",
+                code="USER_LIST_HEADERS_INVALID",
+                context={"missing_headers": missing, "observed_headers": frame.columns.tolist()},
+            )
+
+        lookup: dict[str, str] = {}
+        duplicates: set[str] = set()
+        blank_ids = 0
+        for item in frame[["ID", "User"]].itertuples(index=False, name=None):
+            identifier = self._normalise_identifier(item[0])
+            if not identifier:
+                blank_ids += 1
+                continue
+            if identifier in lookup:
+                duplicates.add(identifier)
+                continue
+            lookup[identifier] = "" if pd.isna(item[1]) else str(item[1]).strip()
+        if duplicates:
+            raise InputValidationError(
+                "The User List contains duplicate IDs, so payment accounts cannot be matched safely.",
+                code="USER_LIST_DUPLICATE_ID",
+                context={"duplicate_count": len(duplicates), "sample_ids": sorted(duplicates)[:25]},
+            )
+        if not lookup:
+            raise InputValidationError(
+                "The User List contains no usable IDs.", code="USER_LIST_EMPTY"
+            )
+        return lookup, {
+            "filename": path.name,
+            "source_rows": int(len(frame)),
+            "unique_ids": len(lookup),
+            "blank_ids_ignored": blank_ids,
+        }
+
+    @staticmethod
+    def _normalise_identifier(value: Any) -> str:
+        if value is None or pd.isna(value):
+            return ""
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value)).casefold()
+        text = str(value).strip()
+        if text.endswith(".0") and text[:-2].isdigit():
+            text = text[:-2]
+        return text.casefold()
 
     def _read_bonus_csv(self, path: Path) -> dict[str, Any]:
         frame = read_table(path)
