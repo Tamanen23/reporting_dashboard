@@ -233,7 +233,7 @@ return [
                     'is_required' => true,
                     'accepted_extensions' => ['xlsx', 'csv'],
                     'required_columns' => ['bet_id', 'player_id', 'username', 'bet_date', 'game', 'slip_state', 'bet_status', 'stake'],
-                    'validation_rules' => ['max_size_kb' => 51200, 'worksheet' => 'Bet Legs Report-6'],
+                    'validation_rules' => ['max_size_kb' => 131072, 'worksheet' => 'Bet Legs Report-6'],
                     'display_order' => 30,
                 ],
             ],

@@ -39,7 +39,7 @@ final class ReportRegistryAndUploadTest extends TestCase
         self::assertSame('user_list', $registration->inputs->sole()->input_key);
         $payments = ReportDefinition::query()->with('inputs')->where('code', 'deposits_withdrawals_bonus_dashboard')->firstOrFail();
         self::assertSame(
-            ['payment_transactions', 'bonus_summary'],
+            ['user_list', 'payment_transactions', 'bonus_summary'],
             $payments->inputs->sortBy('display_order')->pluck('input_key')->all(),
         );
         $playerActivity = ReportDefinition::query()->with('inputs')->where('code', 'player_activity_retention_dashboard')->firstOrFail();

@@ -23,7 +23,7 @@ final class StoreReportGenerationRequest extends FormRequest
             'excluded_dates' => ['nullable', 'array'],
             'excluded_dates.*' => ['nullable', 'date', 'after_or_equal:reporting_period_start', 'before_or_equal:reporting_period_end'],
             'inputs' => ['nullable', 'array'],
-            'inputs.*' => ['file', 'max:51200'],
+            'inputs.*' => ['file', 'max:131072'],
             'source_generations' => ['nullable', 'array'],
             'source_generations.*' => ['nullable', 'uuid'],
             'source_snapshot' => ['nullable', 'string', 'size:64'],

@@ -90,8 +90,9 @@ pytest
 
 ## Upload limits
 
-Nginx and PHP accept requests up to 64 MB. Laravel validates individual workbook
-uploads at a maximum of 50 MB.
+Nginx and PHP accept multipart requests up to 256 MB. PHP and Laravel allow an
+individual file up to 128 MB. Report definitions apply the narrower business
+limit per input: Bet Legs allows 128 MB and the other current inputs allow 50 MB.
 
 ## Data and secrets
 

@@ -409,6 +409,13 @@ final class ReportGenerationController extends Controller
 
                 continue;
             }
+            $maxSizeKb = (int) ($input->validation_rules['max_size_kb'] ?? 51200);
+            if ($upload->getSize() > $maxSizeKb * 1024) {
+                $maxSizeMb = (int) ceil($maxSizeKb / 1024);
+                throw ValidationException::withMessages([
+                    "inputs.{$input->input_key}" => "The {$input->label} must not be larger than {$maxSizeMb} MB.",
+                ]);
+            }
             $extension = mb_strtolower($upload->getClientOriginalExtension());
             if (! in_array($extension, $input->accepted_extensions, true)) {
                 throw ValidationException::withMessages(["inputs.{$input->input_key}" => "The {$input->label} has an unsupported file format."]);
