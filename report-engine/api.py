@@ -14,6 +14,7 @@ from reports.deposits_withdrawals_bonus_dashboard.v1 import (
 )
 from reports.deposits_withdrawals_bonus_dashboard.v1.config import PaymentsConfig
 from reports.overall_performance_dashboard.v1 import OverallPerformanceDashboardReport
+from reports.monthly_performance_dashboard.v1 import MonthlyPerformanceDashboardReport
 from reports.player_activity_retention_dashboard.v1 import (
     PlayerActivityRetentionDashboardReport,
 )
@@ -125,6 +126,10 @@ class OverallPerformanceRequest(BaseModel):
     excluded_dates: list[date] = Field(default_factory=list)
     rules: dict = Field(default_factory=dict)
     generation_uuid: str
+
+
+class MonthlyPerformanceRequest(OverallPerformanceRequest):
+    pass
 
 
 @app.get("/health")
@@ -311,4 +316,25 @@ def generate_overall_performance(request: OverallPerformanceRequest) -> dict[str
                             detail={"code": error.code, "message": str(error), "context": error.context}) from error
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(status_code=422, detail={"code": "OVERALL_SOURCE_SCHEMA_INVALID", "message": str(error)}) from error
+    return {key: str(path) for key, path in artifacts.items()}
+
+
+@app.post("/v1/monthly-performance/generate")
+def generate_monthly_performance(request: MonthlyPerformanceRequest) -> dict[str, str]:
+    for path in [*request.input_paths.values(), request.work_directory]:
+        if not path.is_absolute() or "/reports" not in str(path):
+            raise HTTPException(status_code=400, detail="Paths must be inside /reports.")
+    try:
+        artifacts = MonthlyPerformanceDashboardReport().run(
+            request.input_paths, request.provenance, request.work_directory,
+            report_date=request.report_date,
+            reporting_period_start=request.reporting_period_start,
+            reporting_period_end=request.reporting_period_end,
+            generation_uuid=request.generation_uuid,
+        )
+    except ReportEngineError as error:
+        raise HTTPException(status_code=422 if not error.retryable else 503,
+                            detail={"code": error.code, "message": str(error), "context": error.context}) from error
+    except (KeyError, TypeError, ValueError) as error:
+        raise HTTPException(status_code=422, detail={"code": "MONTHLY_SOURCE_SCHEMA_INVALID", "message": str(error)}) from error
     return {key: str(path) for key, path in artifacts.items()}

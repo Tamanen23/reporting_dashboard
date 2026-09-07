@@ -56,7 +56,7 @@
                 target.innerHTML = '<p class="muted tiny">Select an active dashboard to see its required source file.</p>';
                 return;
             }
-            if (definition.code === 'overall_performance_dashboard') {
+            if (['overall_performance_dashboard', 'monthly_performance_dashboard'].includes(definition.code)) {
                 const start = periodStart.value;
                 const end = periodEnd.value;
                 const matches = overallSnapshots.filter(snapshot => snapshot.period_start === start && snapshot.displayed_end === end);

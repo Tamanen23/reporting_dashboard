@@ -188,10 +188,10 @@ final class ReportGenerationController extends Controller
         if (! $definition || ! $definition->is_active) {
             throw ValidationException::withMessages(['report_code' => 'The selected report type is not active.']);
         }
-        if (! in_array($definition->code, ['registration_dashboard', 'deposits_withdrawals_bonus_dashboard', 'cash_operations_dashboard', 'player_activity_retention_dashboard', 'overall_performance_dashboard'], true)) {
+        if (! in_array($definition->code, ['registration_dashboard', 'deposits_withdrawals_bonus_dashboard', 'cash_operations_dashboard', 'player_activity_retention_dashboard', 'overall_performance_dashboard', 'monthly_performance_dashboard'], true)) {
             throw ValidationException::withMessages(['report_code' => 'The selected report processor is not available.']);
         }
-        if ($definition->code === 'overall_performance_dashboard') {
+        if (in_array($definition->code, ['overall_performance_dashboard', 'monthly_performance_dashboard'], true)) {
             return $this->storeOverallPerformance($request, $definition);
         }
         if (in_array($definition->code, ['deposits_withdrawals_bonus_dashboard', 'player_activity_retention_dashboard'], true)) {
@@ -688,7 +688,7 @@ final class ReportGenerationController extends Controller
         });
         GenerateRegistrationDashboard::dispatch($generation->id);
 
-        return redirect()->route('reports.show', $generation)->with('success', 'Overall Performance generation queued.');
+        return redirect()->route('reports.show', $generation)->with('success', "{$definition->name} generation queued.");
     }
 
     public function retry(Request $request, ReportGeneration $report): RedirectResponse

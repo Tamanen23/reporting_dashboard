@@ -27,11 +27,11 @@ final class ReportRegistryAndUploadTest extends TestCase
         app(ReportDefinitionRegistry::class)->syncManifests();
     }
 
-    public function test_registry_maps_five_explicit_reports_and_implemented_modules_are_active(): void
+    public function test_registry_maps_six_explicit_reports_and_implemented_modules_are_active(): void
     {
-        self::assertSame(5, ReportDefinition::query()->count());
+        self::assertSame(6, ReportDefinition::query()->count());
         self::assertSame(
-            ['registration_dashboard', 'deposits_withdrawals_bonus_dashboard', 'cash_operations_dashboard', 'player_activity_retention_dashboard', 'overall_performance_dashboard'],
+            ['registration_dashboard', 'deposits_withdrawals_bonus_dashboard', 'cash_operations_dashboard', 'player_activity_retention_dashboard', 'overall_performance_dashboard', 'monthly_performance_dashboard'],
             ReportDefinition::query()->where('is_active', true)->orderBy('display_order')->pluck('code')->all(),
         );
         $registration = ReportDefinition::query()->with('inputs')->where('code', 'registration_dashboard')->firstOrFail();
@@ -61,7 +61,8 @@ final class ReportRegistryAndUploadTest extends TestCase
             ->assertSee("generationForm.dataset.submitting === 'true'", false)
             ->assertSee('inputs[${input.key}]', false)
             ->assertSee('source_generations[${key}]', false)
-            ->assertSee('Overall Performance Dashboard');
+            ->assertSee('Overall Performance Dashboard')
+            ->assertSee('Monthly Performance Dashboard');
     }
 
     public function test_generation_pipeline_is_available_to_authenticated_users(): void
@@ -146,6 +147,7 @@ final class ReportRegistryAndUploadTest extends TestCase
             ->assertSessionHas('warning', 'This exact report has already been generated.');
         self::assertSame(1, ReportGeneration::query()->count());
         Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
+
     }
 
     public function test_valid_registration_csv_is_stored_with_its_real_format_and_queued(): void
@@ -168,6 +170,7 @@ final class ReportRegistryAndUploadTest extends TestCase
         self::assertStringEndsWith('.csv', $file->stored_filename);
         Storage::disk('local')->assertExists($file->stored_path);
         Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
+
     }
 
     public function test_player_activity_user_csv_maps_registered_at_to_registration_date(): void
@@ -514,6 +517,20 @@ final class ReportRegistryAndUploadTest extends TestCase
             ->dependencies()
             ->count());
         Queue::assertPushed(GenerateRegistrationDashboard::class, 1);
+
+        $monthlyResponse = $this->actingAs($user)->post(route('reports.store'), [
+            'report_code' => 'monthly_performance_dashboard',
+            'report_date' => '2026-08-06',
+            'reporting_period_start' => '2026-06-11',
+            'reporting_period_end' => '2026-08-05',
+            'source_generations' => $generationUuids,
+            'source_snapshot' => $snapshotId,
+        ]);
+        $monthlyResponse->assertSessionHasNoErrors();
+        self::assertSame(1, ReportGeneration::query()
+            ->whereHas('reportDefinition', fn ($query) => $query->where('code', 'monthly_performance_dashboard'))
+            ->count());
+        Queue::assertPushed(GenerateRegistrationDashboard::class, 2);
     }
 
     private function payload(UploadedFile $workbook): array
