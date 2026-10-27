@@ -1,4 +1,4 @@
-FROM php:8.4-fpm-alpine
+FROM php:8.4.27-fpm-alpine
 
 RUN apk add --no-cache icu-dev libpq-dev libzip-dev oniguruma-dev $PHPIZE_DEPS \
     && docker-php-ext-install intl mbstring pcntl pdo_pgsql zip \
@@ -8,4 +8,5 @@ RUN apk add --no-cache icu-dev libpq-dev libzip-dev oniguruma-dev $PHPIZE_DEPS \
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY docker/php/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
+COPY docker/php/security.ini /usr/local/etc/php/conf.d/security.ini
 WORKDIR /var/www/html

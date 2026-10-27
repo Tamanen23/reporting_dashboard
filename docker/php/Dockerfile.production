@@ -7,7 +7,7 @@ COPY resources ./resources
 COPY vite.config.js ./
 RUN npm run build
 
-FROM php:8.4-fpm-alpine
+FROM php:8.4.27-fpm-alpine
 
 RUN apk add --no-cache icu-dev libpq-dev libzip-dev oniguruma-dev tini $PHPIZE_DEPS \
     && docker-php-ext-install intl mbstring pcntl pdo_pgsql opcache zip \
@@ -17,6 +17,7 @@ RUN apk add --no-cache icu-dev libpq-dev libzip-dev oniguruma-dev tini $PHPIZE_D
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY docker/php/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
+COPY docker/php/security.ini /usr/local/etc/php/conf.d/security.ini
 COPY docker/php/production.ini /usr/local/etc/php/conf.d/production.ini
 
 WORKDIR /var/www/html

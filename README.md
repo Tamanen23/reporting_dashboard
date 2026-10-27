@@ -127,3 +127,9 @@ Validate the production definition locally:
 docker compose --env-file .env.production.example -f compose.production.yml config --quiet
 docker compose --env-file .env.production.example -f compose.production.yml build
 ```
+
+Both PHP images use PHP 8.4.27, which includes the PHP2Shell security fixes.
+Session upload progress is disabled in `docker/php/security.ini` as a
+mitigation for CVE-2026-115560. Rebuild images with `--pull` and recreate the
+`app`, `queue-worker`, and `scheduler` containers when applying these changes;
+restarting existing containers does not update their images or baked-in settings.
